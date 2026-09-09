@@ -1,0 +1,3 @@
+// Copy to Local.xcconfig. It is untracked — signing is personal to whoever builds.
+// Find yours in Xcode: Settings > Accounts > your Apple ID > the Team ID column.
+DEVELOPMENT_TEAM = YOUR_TEAM_ID
