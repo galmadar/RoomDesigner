@@ -5,11 +5,11 @@ import simd
 struct RoomDetailView: View {
     @Bindable var room: ScannedRoom
 
-    @State private var mesh: Mesh?
+    @StateObject private var previews = PreviewRenderer()
+    @State private var isDragging = false
     @State private var cameraPosition: SIMD2<Float> = .zero
     @State private var yaw: Float = 0
     @State private var conditioning: ConditioningImages.Kind = .depth
-    @State private var preview: UIImage?
     @State private var brief = ""
     @State private var strength: Double = 1.0
     @State private var isGenerating = false
@@ -38,6 +38,7 @@ struct RoomDetailView: View {
         .onChange(of: cameraPosition) { render() }
         .onChange(of: yaw) { render() }
         .onChange(of: conditioning) { render() }
+        .onChange(of: isDragging) { if !isDragging { render() } }   // sharpen on release
     }
 
     private func viewpoint(_ plan: FloorPlan) -> some View {
@@ -47,7 +48,8 @@ struct RoomDetailView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            CameraPlanPicker(plan: plan, position: $cameraPosition, yaw: $yaw)
+            CameraPlanPicker(plan: plan, position: $cameraPosition,
+                             yaw: $yaw, isDragging: $isDragging)
                 .frame(height: 320)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
@@ -55,7 +57,7 @@ struct RoomDetailView: View {
 
     private var framing: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let preview {
+            if let preview = previews.image {
                 Image(uiImage: preview)
                     .resizable().scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -100,7 +102,7 @@ struct RoomDetailView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(brief.isEmpty || preview == nil || isGenerating)
+            .disabled(brief.isEmpty || previews.image == nil || isGenerating)
         }
     }
 
@@ -118,22 +120,20 @@ struct RoomDetailView: View {
     }
 
     private func prepare() {
-        guard mesh == nil, let captured = room.capturedRoom else { return }
+        guard previews.bounds == nil, let captured = room.capturedRoom else { return }
         let built = RoomGeometry.build(from: captured)
-        mesh = built
+        previews.load(built)
         cameraPosition = Camera.centre(of: built.bounds)
         render()
     }
 
     private func render() {
-        guard let mesh, !mesh.isEmpty, let renderer = try? Renderer() else { return }
-        let camera = Camera.standing(at: cameraPosition, in: mesh.bounds, yaw: yaw)
-        guard let buffers = try? renderer.render(mesh, camera: camera) else { return }
-        preview = ConditioningImages.image(conditioning, from: buffers)
+        previews.request(position: cameraPosition, yaw: yaw,
+                         kind: conditioning, draft: isDragging)
     }
 
     private func generate() async {
-        guard let preview else { return }
+        guard let preview = previews.image else { return }
         isGenerating = true
         defer { isGenerating = false }
 

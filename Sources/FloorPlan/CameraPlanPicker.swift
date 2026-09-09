@@ -12,6 +12,7 @@ struct CameraPlanPicker: View {
 
     @Binding var position: SIMD2<Float>
     @Binding var yaw: Float
+    @Binding var isDragging: Bool
 
     /// Matches the renderer, so the cone shows the true frame.
     var fieldOfView: Float = 65 * .pi / 180
@@ -35,9 +36,13 @@ struct CameraPlanPicker: View {
                     .onChanged { value in
                         guard let projection = PlanProjection(plan: plan, size: geometry.size)
                         else { return }
+                        isDragging = true
                         update(with: value.location, projection: projection)
                     }
-                    .onEnded { _ in dragging = nil }
+                    .onEnded { _ in
+                        dragging = nil
+                        isDragging = false
+                    }
             )
         }
         .background(Color(.secondarySystemBackground))
