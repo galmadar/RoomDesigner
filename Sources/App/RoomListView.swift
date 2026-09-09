@@ -8,9 +8,18 @@ struct RoomListView: View {
 
     @State private var isScanning = false
     @State private var isShowingSettings = false
+    @State private var path = NavigationPath()
+
+    /// Lets a simulator run open straight to a room:
+    ///   xcrun simctl launch <sim> <bundle> --console
+    /// with SIMCTL_CHILD_OPEN_ROOM set. Only used for driving the app without a
+    /// device attached; absent in normal use.
+    private var roomToOpenOnLaunch: String? {
+        ProcessInfo.processInfo.environment["OPEN_ROOM"]
+    }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if rooms.isEmpty {
                     ContentUnavailableView {
@@ -47,6 +56,11 @@ struct RoomListView: View {
                 }
             }
             .sheet(isPresented: $isShowingSettings) { SettingsView() }
+            .task {
+                guard let wanted = roomToOpenOnLaunch,
+                      let room = rooms.first(where: { $0.name == wanted }) else { return }
+                path.append(room)
+            }
             .fullScreenCover(isPresented: $isScanning) {
                 ScanFlowView { captured in
                     let room = ScannedRoom(name: "Room \(rooms.count + 1)")
