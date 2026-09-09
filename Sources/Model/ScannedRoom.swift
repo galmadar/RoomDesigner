@@ -20,10 +20,23 @@ final class ScannedRoom {
     /// The brief the images were generated from, so a regenerate can reuse it.
     var brief: String?
 
+    /// Furniture the user has proposed, encoded rather than related: it is a
+    /// small value type owned entirely by this room, and a single blob avoids
+    /// the observation traps of a stored array.
+    var proposalsData: Data?
+
     init(name: String, createdAt: Date = .now) {
         self.name = name
         self.createdAt = createdAt
         self.conceptImages = []
+    }
+
+    var proposals: [Proposal] {
+        get {
+            guard let proposalsData else { return [] }
+            return (try? JSONDecoder().decode([Proposal].self, from: proposalsData)) ?? []
+        }
+        set { proposalsData = try? JSONEncoder().encode(newValue) }
     }
 
     var capturedRoom: CapturedRoom? {

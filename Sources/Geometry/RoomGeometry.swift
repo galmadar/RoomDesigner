@@ -9,6 +9,7 @@ import simd
 enum RoomGeometry {
 
     static func build(from room: CapturedRoom,
+                      proposals: [Proposal] = [],
                       proxies: ProxyMeshLibrary = .boundingBoxes) -> Mesh {
         var mesh = Mesh()
 
@@ -30,6 +31,12 @@ enum RoomGeometry {
         }
         for object in room.objects {
             mesh.append(proxies.mesh(for: object))
+        }
+        // Proposed pieces are ordinary geometry by the time the renderer sees
+        // them — the generator cannot tell scanned from imagined, which is
+        // exactly the point.
+        for proposal in proposals {
+            mesh.append(Furniture.mesh(for: proposal))
         }
         return mesh
     }

@@ -16,6 +16,8 @@ struct RoomDetailView: View {
     @State private var isGenerating = false
     @State private var failure: String?
     @State private var enlarged: UIImage?
+    @State private var mode: CameraPlanPicker.Mode = .camera
+    @State private var selection: Proposal.ID?
 
     var body: some View {
         ScrollView {
@@ -48,23 +50,32 @@ struct RoomDetailView: View {
         .onChange(of: yaw) { render() }
         .onChange(of: conditioning) { render() }
         .onChange(of: fieldOfView) { render() }
+        .onChange(of: room.proposalsData) { rebuild() }
         .onChange(of: isDragging) { if !isDragging { render() } }   // sharpen on release
     }
 
     private func viewpoint(_ plan: FloorPlan) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Where you're standing").font(.headline)
-            Text("Drag the dot to move. Drag the small circle to turn. The shaded wedge is what ends up in the picture.")
+            Picker("Mode", selection: $mode) {
+                Text("Camera").tag(CameraPlanPicker.Mode.camera)
+                Text("Furniture").tag(CameraPlanPicker.Mode.furniture)
+            }
+            .pickerStyle(.segmented)
+
+            Text(mode == .camera
+                 ? "Drag the dot to move. Drag the small circle to turn. The shaded wedge is what ends up in the picture."
+                 : "Add a piece below, then drag it into place. The thick edge is its front.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            CameraPlanPicker(plan: plan, position: $cameraPosition,
+            CameraPlanPicker(plan: plan, mode: mode, position: $cameraPosition,
                              yaw: $yaw, isDragging: $isDragging,
-                             fieldOfView: $fieldOfView)
+                             fieldOfView: $fieldOfView,
+                             proposals: proposalsBinding, selection: $selection)
                 .frame(height: 320)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
-            lens
+            if mode == .camera { lens } else { furniture }
         }
     }
 
@@ -97,6 +108,106 @@ struct RoomDetailView: View {
             .buttonStyle(.bordered)
             .labelStyle(.titleAndIcon)
         }
+    }
+
+    // MARK: - Furniture
+
+    /// Always writes the whole array back: SwiftData does not reliably observe
+    /// an in-place mutation of a stored collection.
+    private var proposalsBinding: Binding<[Proposal]> {
+        Binding(get: { room.proposals }, set: { room.proposals = $0 })
+    }
+
+    private var selectedProposal: Proposal? {
+        room.proposals.first { $0.id == selection }
+    }
+
+    private var furniture: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Furniture.Kind.allCases) { kind in
+                        Button { add(kind) } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: kind.symbol).font(.system(size: 17))
+                                Text(kind.label).font(.caption2)
+                            }
+                            .frame(width: 62, height: 52)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.horizontal, 1)
+            }
+
+            if let selected = selectedProposal {
+                HStack(spacing: 8) {
+                    Button { turn(selected, by: -.pi / 12) } label: {
+                        Image(systemName: "rotate.left")
+                    }
+                    Button { turn(selected, by: .pi / 12) } label: {
+                        Image(systemName: "rotate.right")
+                    }
+                    Button { resize(selected, by: 0.9) } label: {
+                        Image(systemName: "minus.magnifyingglass")
+                    }
+                    Button { resize(selected, by: 1.1) } label: {
+                        Image(systemName: "plus.magnifyingglass")
+                    }
+                    Spacer()
+                    Text(dimensions(of: selected)).font(.caption2).monospacedDigit()
+                        .foregroundStyle(.secondary)
+                    Button(role: .destructive) { remove(selected) } label: {
+                        Image(systemName: "trash")
+                    }
+                }
+                .buttonStyle(.bordered)
+            } else if !room.proposals.isEmpty {
+                Text("Tap a piece on the plan to turn, resize or remove it.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func dimensions(of proposal: Proposal) -> String {
+        String(format: "%.2f × %.2f m", proposal.size.x, proposal.size.z)
+    }
+
+    /// New pieces land in front of the camera rather than at the origin, so they
+    /// arrive already in shot.
+    private func add(_ kind: Furniture.Kind) {
+        guard let bounds = previews.bounds else { return }
+        let ahead = cameraPosition + SIMD2(sin(yaw), -cos(yaw)) * 2.0
+        var proposal = Proposal(kind: kind, position: Camera.clamp(ahead, in: bounds))
+        proposal.rotation = yaw + .pi        // facing back towards the camera
+        room.proposals = room.proposals + [proposal]
+        selection = proposal.id
+        render()
+    }
+
+    private func turn(_ proposal: Proposal, by angle: Float) {
+        mutate(proposal) { $0.rotation += angle }
+    }
+
+    private func resize(_ proposal: Proposal, by factor: Float) {
+        mutate(proposal) { $0.size = simd_clamp($0.size * factor,
+                                                SIMD3(repeating: 0.1),
+                                                SIMD3(repeating: 4.0)) }
+    }
+
+    private func remove(_ proposal: Proposal) {
+        room.proposals = room.proposals.filter { $0.id != proposal.id }
+        selection = nil
+        render()
+    }
+
+    private func mutate(_ proposal: Proposal, _ change: (inout Proposal) -> Void) {
+        guard let index = room.proposals.firstIndex(where: { $0.id == proposal.id })
+        else { return }
+        var updated = room.proposals
+        change(&updated[index])
+        room.proposals = updated
+        render()
     }
 
     private var lensDescription: String {
@@ -185,9 +296,15 @@ struct RoomDetailView: View {
 
     private func prepare() {
         guard previews.bounds == nil, let captured = room.capturedRoom else { return }
-        let built = RoomGeometry.build(from: captured)
+        let built = RoomGeometry.build(from: captured, proposals: room.proposals)
         previews.load(built)
         cameraPosition = Camera.centre(of: built.bounds)
+        render()
+    }
+
+    private func rebuild() {
+        guard let captured = room.capturedRoom else { return }
+        previews.load(RoomGeometry.build(from: captured, proposals: room.proposals))
         render()
     }
 
