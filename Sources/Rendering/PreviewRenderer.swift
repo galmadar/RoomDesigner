@@ -23,6 +23,7 @@ final class PreviewRenderer: ObservableObject {
         var position: SIMD2<Float>
         var yaw: Float
         var kind: ConditioningImages.Kind
+        var fieldOfView: Float
         var size: Int
     }
 
@@ -36,9 +37,9 @@ final class PreviewRenderer: ObservableObject {
 
     var bounds: (min: SIMD3<Float>, max: SIMD3<Float>)? { mesh?.bounds }
 
-    func request(position: SIMD2<Float>, yaw: Float,
+    func request(position: SIMD2<Float>, yaw: Float, fieldOfView: Float,
                  kind: ConditioningImages.Kind, draft: Bool) {
-        pending = Job(position: position, yaw: yaw, kind: kind,
+        pending = Job(position: position, yaw: yaw, kind: kind, fieldOfView: fieldOfView,
                       size: draft ? Self.draftSize : Self.finalSize)
         pump()
     }
@@ -52,7 +53,8 @@ final class PreviewRenderer: ObservableObject {
         isRendering = true
 
         queue.async {
-            let camera = Camera.standing(at: job.position, in: mesh.bounds, yaw: job.yaw)
+            let camera = Camera.standing(at: job.position, in: mesh.bounds,
+                                         yaw: job.yaw, fieldOfView: job.fieldOfView)
             let rendered = (try? renderer.render(mesh, camera: camera, size: job.size))
                 .flatMap { ConditioningImages.image(job.kind, from: $0) }
 

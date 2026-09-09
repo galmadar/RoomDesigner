@@ -9,6 +9,7 @@ struct RoomDetailView: View {
     @State private var isDragging = false
     @State private var cameraPosition: SIMD2<Float> = .zero
     @State private var yaw: Float = 0
+    @State private var fieldOfView: Float = 65 * .pi / 180
     @State private var conditioning: ConditioningImages.Kind = .depth
     @State private var brief = ""
     @State private var strength: Double = 1.0
@@ -46,6 +47,7 @@ struct RoomDetailView: View {
         .onChange(of: cameraPosition) { render() }
         .onChange(of: yaw) { render() }
         .onChange(of: conditioning) { render() }
+        .onChange(of: fieldOfView) { render() }
         .onChange(of: isDragging) { if !isDragging { render() } }   // sharpen on release
     }
 
@@ -57,10 +59,59 @@ struct RoomDetailView: View {
                 .foregroundStyle(.secondary)
 
             CameraPlanPicker(plan: plan, position: $cameraPosition,
-                             yaw: $yaw, isDragging: $isDragging)
+                             yaw: $yaw, isDragging: $isDragging,
+                             fieldOfView: $fieldOfView)
                 .frame(height: 320)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            lens
         }
+    }
+
+    private var lens: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.left.and.right.square")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Slider(value: Binding(get: { Double(fieldOfView) },
+                                          set: { fieldOfView = Float($0) }),
+                           in: Double(30 * Float.pi / 180)...Double(110 * Float.pi / 180))
+                    Text("Lens \(Int(fieldOfView * 180 / .pi))° — \(lensDescription)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                    .foregroundStyle(.secondary)
+                Button { dolly(-0.35) } label: {
+                    Label("Back", systemImage: "minus.magnifyingglass")
+                        .frame(maxWidth: .infinity)
+                }
+                Button { dolly(0.35) } label: {
+                    Label("Closer", systemImage: "plus.magnifyingglass")
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .buttonStyle(.bordered)
+            .labelStyle(.titleAndIcon)
+        }
+    }
+
+    private var lensDescription: String {
+        let degrees = fieldOfView * 180 / .pi
+        if degrees < 45 { return "tight, picks out one corner" }
+        if degrees < 75 { return "natural, like your eyes" }
+        return "wide, makes the room feel bigger"
+    }
+
+    /// Steps along the way the camera is facing, so Back and Closer mean what
+    /// you are looking at, not a compass direction.
+    private func dolly(_ metres: Float) {
+        guard let bounds = previews.bounds else { return }
+        let heading = SIMD2(sin(yaw), -cos(yaw))
+        cameraPosition = Camera.clamp(cameraPosition + heading * metres, in: bounds)
     }
 
     private var framing: some View {
@@ -141,7 +192,7 @@ struct RoomDetailView: View {
     }
 
     private func render() {
-        previews.request(position: cameraPosition, yaw: yaw,
+        previews.request(position: cameraPosition, yaw: yaw, fieldOfView: fieldOfView,
                          kind: conditioning, draft: isDragging)
     }
 

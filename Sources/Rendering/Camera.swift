@@ -13,11 +13,22 @@ struct Camera {
                          in bounds: (min: SIMD3<Float>, max: SIMD3<Float>),
                          eyeHeight: Float = 1.5,
                          yaw: Float = 0,
-                         pitch: Float = 0) -> Camera {
+                         pitch: Float = 0,
+                         fieldOfView: Float = 65 * .pi / 180) -> Camera {
+        let inside = clamp(ground, in: bounds)
         let height = min(bounds.min.y + eyeHeight, bounds.max.y - 0.1)
-        let eye = SIMD3(ground.x, height, ground.y)
+        let eye = SIMD3(inside.x, height, inside.y)
         let direction = SIMD3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch))
-        return Camera(eye: eye, target: eye + direction)
+        return Camera(eye: eye, target: eye + direction, fieldOfView: fieldOfView)
+    }
+
+    /// Keeps the eye just inside the walls. Outside them you would be looking at
+    /// the back of the room, which renders as a solid block.
+    static func clamp(_ ground: SIMD2<Float>,
+                      in bounds: (min: SIMD3<Float>, max: SIMD3<Float>),
+                      margin: Float = 0.15) -> SIMD2<Float> {
+        SIMD2(min(max(ground.x, bounds.min.x + margin), bounds.max.x - margin),
+              min(max(ground.y, bounds.min.z + margin), bounds.max.z - margin))
     }
 
     /// The middle of the room, as a starting point.

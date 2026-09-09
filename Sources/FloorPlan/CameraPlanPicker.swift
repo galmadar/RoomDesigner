@@ -15,7 +15,7 @@ struct CameraPlanPicker: View {
     @Binding var isDragging: Bool
 
     /// Matches the renderer, so the cone shows the true frame.
-    var fieldOfView: Float = 65 * .pi / 180
+    @Binding var fieldOfView: Float
 
     @State private var dragging: Handle?
 
