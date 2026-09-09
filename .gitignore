@@ -1,0 +1,9 @@
+# Signing is personal to whoever builds it.
+Local.xcconfig
+
+build/
+build-sim/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
