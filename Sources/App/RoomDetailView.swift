@@ -14,15 +14,16 @@ struct RoomDetailView: View {
     @State private var strength: Double = 1.0
     @State private var isGenerating = false
     @State private var failure: String?
+    @State private var enlarged: UIImage?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 if let captured = room.capturedRoom {
+                    results
                     viewpoint(FloorPlan(room: captured))
                     framing
                     designBrief
-                    results
                 } else {
                     ContentUnavailableView("Nothing scanned", systemImage: "questionmark")
                 }
@@ -34,6 +35,13 @@ struct RoomDetailView: View {
         .alert("Couldn't generate", isPresented: .constant(failure != nil)) {
             Button("OK") { failure = nil }
         } message: { Text(failure ?? "") }
+        .fullScreenCover(item: $enlarged) { image in
+            ZStack {
+                Color.black.ignoresSafeArea()
+                Image(uiImage: image).resizable().scaledToFit()
+            }
+            .onTapGesture { enlarged = nil }
+        }
         .task { prepare() }
         .onChange(of: cameraPosition) { render() }
         .onChange(of: yaw) { render() }
@@ -108,12 +116,17 @@ struct RoomDetailView: View {
 
     @ViewBuilder private var results: some View {
         if !room.conceptImages.isEmpty {
-            Text("Concepts").font(.headline)
-            ForEach(Array(room.conceptImages.enumerated().reversed()), id: \.offset) { _, data in
-                if let image = UIImage(data: data) {
-                    Image(uiImage: image)
-                        .resizable().scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 10) {
+                Text("^[\(room.conceptImages.count) design](inflect: true)")
+                    .font(.headline)
+
+                ForEach(Array(room.conceptImages.enumerated()).reversed(), id: \.offset) { pair in
+                    if let image = UIImage(data: pair.element) {
+                        Image(uiImage: image)
+                            .resizable().scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .onTapGesture { enlarged = image }
+                    }
                 }
             }
         }
@@ -142,10 +155,21 @@ struct RoomDetailView: View {
                 from: preview,
                 brief: .init(prompt: brief, strength: Float(strength), conditioning: conditioning)
             )
+            let encoded = images.compactMap { $0.pngData() }
+            guard !encoded.isEmpty else {
+                failure = "The design came back but the pictures could not be read."
+                return
+            }
             room.brief = brief
-            room.conceptImages.append(contentsOf: images.compactMap { $0.pngData() })
+            room.conceptImages = room.conceptImages + encoded
         } catch {
             failure = error.localizedDescription
         }
     }
+}
+
+
+/// So a tapped concept can drive `fullScreenCover(item:)`.
+extension UIImage: @retroactive Identifiable {
+    public var id: Int { hashValue }
 }
