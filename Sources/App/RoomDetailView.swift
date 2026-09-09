@@ -1,10 +1,13 @@
 import RoomPlan
 import SwiftUI
+import simd
 
 struct RoomDetailView: View {
     @Bindable var room: ScannedRoom
 
-    @State private var yaw: Double = 0
+    @State private var mesh: Mesh?
+    @State private var cameraPosition: SIMD2<Float> = .zero
+    @State private var yaw: Float = 0
     @State private var conditioning: ConditioningImages.Kind = .depth
     @State private var preview: UIImage?
     @State private var brief = ""
@@ -14,13 +17,10 @@ struct RoomDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 22) {
                 if let captured = room.capturedRoom {
-                    FloorPlanView(plan: FloorPlan(room: captured))
-                        .frame(height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                    viewpoint(captured)
+                    viewpoint(FloorPlan(room: captured))
+                    framing
                     designBrief
                     results
                 } else {
@@ -34,37 +34,49 @@ struct RoomDetailView: View {
         .alert("Couldn't generate", isPresented: .constant(failure != nil)) {
             Button("OK") { failure = nil }
         } message: { Text(failure ?? "") }
-        .task { render() }
+        .task { prepare() }
+        .onChange(of: cameraPosition) { render() }
+        .onChange(of: yaw) { render() }
+        .onChange(of: conditioning) { render() }
     }
 
-    private func viewpoint(_ captured: CapturedRoom) -> some View {
+    private func viewpoint(_ plan: FloorPlan) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Viewpoint").font(.headline)
+            Text("Where you're standing").font(.headline)
+            Text("Drag the dot to move. Drag the small circle to turn. The shaded wedge is what ends up in the picture.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
+            CameraPlanPicker(plan: plan, position: $cameraPosition, yaw: $yaw)
+                .frame(height: 320)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private var framing: some View {
+        VStack(alignment: .leading, spacing: 8) {
             if let preview {
                 Image(uiImage: preview)
                     .resizable().scaledToFit()
                     .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.secondarySystemBackground))
+                    .frame(height: 200)
+                    .overlay(ProgressView())
             }
 
             Picker("Conditioning", selection: $conditioning) {
-                ForEach(ConditioningImages.Kind.allCases) { Text($0.rawValue.capitalized).tag($0) }
+                ForEach(ConditioningImages.Kind.allCases) {
+                    Text($0.rawValue.capitalized).tag($0)
+                }
             }
             .pickerStyle(.segmented)
-            .onChange(of: conditioning) { render() }
-
-            HStack {
-                Image(systemName: "arrow.clockwise")
-                Slider(value: $yaw, in: 0...360, step: 5) { editing in
-                    if !editing { render() }
-                }
-                Text("\(Int(yaw))°").monospacedDigit().frame(width: 44)
-            }
         }
     }
 
     private var designBrief: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("The redesign").font(.headline)
             TextField("Scandinavian bedroom, oak floor, morning light",
                       text: $brief, axis: .vertical)
@@ -81,12 +93,13 @@ struct RoomDetailView: View {
                 Task { await generate() }
             } label: {
                 if isGenerating {
-                    HStack { ProgressView(); Text("Designing…") }
+                    HStack { ProgressView(); Text("Designing…") }.frame(maxWidth: .infinity)
                 } else {
-                    Text("Design this room")
+                    Text("Design this room").frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
             .disabled(brief.isEmpty || preview == nil || isGenerating)
         }
     }
@@ -94,7 +107,7 @@ struct RoomDetailView: View {
     @ViewBuilder private var results: some View {
         if !room.conceptImages.isEmpty {
             Text("Concepts").font(.headline)
-            ForEach(Array(room.conceptImages.enumerated()), id: \.offset) { _, data in
+            ForEach(Array(room.conceptImages.enumerated().reversed()), id: \.offset) { _, data in
                 if let image = UIImage(data: data) {
                     Image(uiImage: image)
                         .resizable().scaledToFit()
@@ -104,12 +117,17 @@ struct RoomDetailView: View {
         }
     }
 
-    private func render() {
-        guard let captured = room.capturedRoom else { return }
-        let mesh = RoomGeometry.build(from: captured)
-        guard !mesh.isEmpty, let renderer = try? Renderer() else { return }
+    private func prepare() {
+        guard mesh == nil, let captured = room.capturedRoom else { return }
+        let built = RoomGeometry.build(from: captured)
+        mesh = built
+        cameraPosition = Camera.centre(of: built.bounds)
+        render()
+    }
 
-        let camera = Camera.standing(in: mesh.bounds, yaw: Float(yaw) * .pi / 180)
+    private func render() {
+        guard let mesh, !mesh.isEmpty, let renderer = try? Renderer() else { return }
+        let camera = Camera.standing(at: cameraPosition, in: mesh.bounds, yaw: yaw)
         guard let buffers = try? renderer.render(mesh, camera: camera) else { return }
         preview = ConditioningImages.image(conditioning, from: buffers)
     }

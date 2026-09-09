@@ -8,16 +8,22 @@ struct Camera {
     var near: Float = 0.05
     var far: Float = 40
 
-    /// Middle of the room, at eye height, facing `yaw` radians round vertical.
-    static func standing(in bounds: (min: SIMD3<Float>, max: SIMD3<Float>),
+    /// Standing at a chosen spot on the floor, at eye height, facing `yaw`.
+    static func standing(at ground: SIMD2<Float>,
+                         in bounds: (min: SIMD3<Float>, max: SIMD3<Float>),
                          eyeHeight: Float = 1.5,
                          yaw: Float = 0,
                          pitch: Float = 0) -> Camera {
-        let centre = (bounds.min + bounds.max) / 2
         let height = min(bounds.min.y + eyeHeight, bounds.max.y - 0.1)
-        let eye = SIMD3(centre.x, height, centre.z)
+        let eye = SIMD3(ground.x, height, ground.y)
         let direction = SIMD3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch))
         return Camera(eye: eye, target: eye + direction)
+    }
+
+    /// The middle of the room, as a starting point.
+    static func centre(of bounds: (min: SIMD3<Float>, max: SIMD3<Float>)) -> SIMD2<Float> {
+        let middle = (bounds.min + bounds.max) / 2
+        return SIMD2(middle.x, middle.z)
     }
 
     func view() -> simd_float4x4 {

@@ -7,8 +7,8 @@ options:
 
 settings:
   base:
-    # Language mode 5 on purpose: Swift 6 strict concurrency would need a
-    # compiler to work through, and none of this has been compiled yet.
+    # Language mode 5 on purpose: Swift 6 strict concurrency is a fight worth
+    # picking later, not while the app is still finding its shape.
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1"
     CURRENT_PROJECT_VERSION: "1"
@@ -19,15 +19,23 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Room Designer
+        NSCameraUsageDescription: Scanning a room uses the camera and the depth sensor.
+        # Reaching the design service while it runs on a Mac on the same wifi.
+        NSLocalNetworkUsageDescription: Finding the design service running on your Mac.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.galmadar.roomdesigner
         DEVELOPMENT_TEAM: YOUR_TEAM_ID
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1,2"
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Room Designer
-        INFOPLIST_KEY_NSCameraUsageDescription: Scanning a room uses the camera and the depth sensor.
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
