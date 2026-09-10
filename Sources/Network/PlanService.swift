@@ -49,6 +49,7 @@ struct PlanService {
         let prompt: String
         let strength: Float
         let conditioning: String
+        let count: Int
         let image: String            // base64 PNG
     }
 
@@ -56,7 +57,20 @@ struct PlanService {
         let images: [String]         // URLs
     }
 
-    func generate(from image: UIImage, brief: Brief) async throws -> [UIImage] {
+    private struct SuggestionRequest: Encodable {
+        let room: RoomFacts
+        let count: Int
+    }
+
+    private struct SuggestionResponse: Decodable {
+        let suggestions: [String]
+    }
+
+    /// Four at a time: enough to compare, few enough to still fit on a screen.
+    static let conceptsPerRun = 4
+
+    func generate(from image: UIImage, brief: Brief,
+                  count: Int = conceptsPerRun) async throws -> [UIImage] {
         guard let png = image.pngData() else { throw Failure.badImage }
 
         var request = URLRequest(url: Self.baseURL.appendingPathComponent("generate"))
@@ -67,6 +81,7 @@ struct PlanService {
             Request(prompt: brief.prompt,
                     strength: brief.strength,
                     conditioning: brief.conditioning.rawValue,
+                    count: count,
                     image: png.base64EncodedString())
         )
 
@@ -90,5 +105,27 @@ struct PlanService {
             for try await image in group { if let image { images.append(image) } }
             return images
         }
+    }
+
+    /// Design ideas for this particular room, from what the scan measured.
+    ///
+    /// The timeout is short on purpose: these are a convenience, and a minute
+    /// spent waiting for them is worse than typing a brief yourself.
+    func suggestions(for facts: RoomFacts, count: Int = 5) async throws -> [String] {
+        var request = URLRequest(url: Self.baseURL.appendingPathComponent("suggest"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 30
+        request.httpBody = try JSONEncoder().encode(
+            SuggestionRequest(room: facts, count: count)
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            throw Failure.server(status: status,
+                                 body: String(data: data, encoding: .utf8) ?? "")
+        }
+        return try JSONDecoder().decode(SuggestionResponse.self, from: data).suggestions
     }
 }

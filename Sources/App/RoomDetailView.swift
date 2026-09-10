@@ -24,6 +24,14 @@ struct RoomDetailView: View {
     @State private var redoStack: [[Proposal]] = []
     @State private var isNamingArrangement = false
     @State private var arrangementName = ""
+    @State private var suggestions: [String] = []
+    @State private var isSuggesting = false
+    @State private var suggestionsFailed = false
+
+    /// How many of the stored images came from the run that just finished, so
+    /// that set can be shown together. View state, not stored: it only matters
+    /// while you are looking at the designs you just asked for.
+    @State private var latestCount = 0
 
     var body: some View {
         ScrollView {
@@ -399,6 +407,8 @@ struct RoomDetailView: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
 
+            ideas
+
             HStack {
                 Text("Hold the room").font(.caption)
                 Slider(value: $strength, in: 0.2...1.0)
@@ -420,20 +430,112 @@ struct RoomDetailView: View {
         }
     }
 
+    /// Fetched once, when asked for. The detail view opens often and a network
+    /// call every time would buy nothing; and if it fails the box is still a box.
+    @ViewBuilder private var ideas: some View {
+        if suggestions.isEmpty {
+            Button {
+                Task { await loadSuggestions() }
+            } label: {
+                if isSuggesting {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("Finding ideas…")
+                    }
+                } else {
+                    Label(suggestionsFailed ? "Try again" : "Suggest ideas",
+                          systemImage: "sparkles")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(isSuggesting || room.capturedRoom == nil)
+
+            if suggestionsFailed {
+                Text("No ideas came back this time. Type your own.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(suggestions, id: \.self) { suggestion in
+                        Button { brief = suggestion } label: {
+                            Text(suggestion)
+                                .font(.caption)
+                                .multilineTextAlignment(.leading)
+                                .lineLimit(3, reservesSpace: true)
+                                .frame(width: 180, alignment: .topLeading)
+                                .padding(.horizontal, 10).padding(.vertical, 8)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(brief == suggestion ? Color.accentColor : Color.secondary)
+                    }
+                }
+                .padding(.horizontal, 1)
+            }
+            Text("Tap an idea to use it, then edit it however you like.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func loadSuggestions() async {
+        guard let captured = room.capturedRoom else { return }
+        isSuggesting = true
+        suggestionsFailed = false
+        defer { isSuggesting = false }
+
+        // Deliberately no alert: a missing suggestion is not an error the user
+        // has to deal with, it just means typing the brief instead.
+        let fetched = (try? await PlanService().suggestions(for: RoomFacts(room: captured))) ?? []
+        suggestions = fetched
+        suggestionsFailed = fetched.isEmpty
+    }
+
+    // MARK: - Results
+
+    private struct Concept: Identifiable {
+        let id: Int
+        let image: UIImage
+    }
+
+    /// Newest first, so the run you just asked for is the first thing on screen.
+    private var concepts: [Concept] {
+        Array(room.conceptImages.enumerated().compactMap { index, data in
+            UIImage(data: data).map { Concept(id: index, image: $0) }
+        }.reversed())
+    }
+
+    private func grid(_ concepts: [Concept]) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                            GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            ForEach(concepts) { concept in
+                Image(uiImage: concept.image)
+                    .resizable().scaledToFit()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .onTapGesture { enlarged = concept.image }
+            }
+        }
+    }
+
     @ViewBuilder private var results: some View {
         if !room.conceptImages.isEmpty {
+            let all = concepts
+            let newest = Array(all.prefix(latestCount))
+            let earlier = Array(all.dropFirst(latestCount))
+
             VStack(alignment: .leading, spacing: 10) {
                 Text("^[\(room.conceptImages.count) design](inflect: true)")
                     .font(.headline)
 
-                ForEach(Array(room.conceptImages.enumerated()).reversed(), id: \.offset) { pair in
-                    if let image = UIImage(data: pair.element) {
-                        Image(uiImage: image)
-                            .resizable().scaledToFit()
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .onTapGesture { enlarged = image }
+                if !newest.isEmpty { grid(newest) }
+                if !earlier.isEmpty {
+                    if !newest.isEmpty {
+                        Text("Earlier").font(.caption).foregroundStyle(.secondary)
                     }
+                    grid(earlier)
                 }
+
+                Text("Tap a design to see it full screen.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
         }
     }
@@ -496,6 +598,9 @@ struct RoomDetailView: View {
                 return
             }
             room.brief = brief
+            latestCount = encoded.count
+            // A fresh array, never append: SwiftData does not observe an
+            // in-place mutation of a stored collection.
             room.conceptImages = room.conceptImages + encoded
         } catch {
             failure = error.localizedDescription
