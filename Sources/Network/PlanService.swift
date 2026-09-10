@@ -66,8 +66,8 @@ struct PlanService {
         let suggestions: [String]
     }
 
-    /// Four at a time: enough to compare, few enough to still fit on a screen.
-    static let conceptsPerRun = 4
+    /// Two at a time: still a comparison, without paying four times over for Flux.
+    static let conceptsPerRun = 2
 
     func generate(from image: UIImage, brief: Brief,
                   count: Int = conceptsPerRun) async throws -> [UIImage] {
