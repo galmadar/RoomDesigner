@@ -21,15 +21,31 @@ struct CameraPlanPicker: View {
     @Binding var selection: Proposal.ID?
 
     @State private var grabbed: Grab?
+    @State private var zoom: CGFloat = 1
+    @State private var zoomAnchor: CGFloat = 1
 
     private enum Grab: Equatable { case body, direction, proposal(Proposal.ID) }
 
     private var coneLength: Float { 2.2 }
 
+    /// What stays pinned to the centre while zoomed: the piece being edited, or
+    /// otherwise where you are standing.
+    private var focus: SIMD2<Float> {
+        if mode == .furniture, let id = selection,
+           let selected = proposals.first(where: { $0.id == id }) {
+            return selected.position
+        }
+        return position
+    }
+
+    private func projection(for size: CGSize) -> PlanProjection? {
+        PlanProjection(plan: plan, size: size, zoom: zoom, focus: focus)
+    }
+
     var body: some View {
         GeometryReader { geometry in
             Canvas { context, size in
-                guard let projection = PlanProjection(plan: plan, size: size) else { return }
+                guard let projection = projection(for: size) else { return }
                 FloorPlanView.draw(plan, in: context, using: projection, labels: true)
                 drawProposals(in: context, using: projection)
                 drawCamera(in: context, using: projection, dimmed: mode == .furniture)
@@ -38,8 +54,7 @@ struct CameraPlanPicker: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        guard let projection = PlanProjection(plan: plan, size: geometry.size)
-                        else { return }
+                        guard let projection = projection(for: geometry.size) else { return }
                         isDragging = true
                         update(with: value.location, projection: projection)
                     }
@@ -48,6 +63,25 @@ struct CameraPlanPicker: View {
                         isDragging = false
                     }
             )
+            .simultaneousGesture(
+                MagnifyGesture()
+                    .onChanged { value in
+                        zoom = min(max(zoomAnchor * value.magnification, 1), 8)
+                    }
+                    .onEnded { _ in zoomAnchor = zoom }
+            )
+            .onTapGesture(count: 2) {
+                withAnimation(.easeOut(duration: 0.2)) { zoom = 1; zoomAnchor = 1 }
+            }
+            .overlay(alignment: .topTrailing) {
+                if zoom > 1.01 {
+                    Text("\(zoom, format: .number.precision(.fractionLength(1)))×")
+                        .font(.caption2.monospacedDigit())
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(.thinMaterial, in: Capsule())
+                        .padding(8)
+                }
+            }
         }
         .background(Color(.secondarySystemBackground))
     }

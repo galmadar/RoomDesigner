@@ -35,8 +35,10 @@ enum RoomGeometry {
         // Proposed pieces are ordinary geometry by the time the renderer sees
         // them — the generator cannot tell scanned from imagined, which is
         // exactly the point.
+        let floorLevel = room.floors.first.map { $0.transform.columns.3.y }
+            ?? (mesh.isEmpty ? 0 : mesh.bounds.min.y)
         for proposal in proposals {
-            mesh.append(Furniture.mesh(for: proposal))
+            mesh.append(Furniture.mesh(for: proposal, floorLevel: floorLevel))
         }
         return mesh
     }

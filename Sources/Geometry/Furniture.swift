@@ -138,14 +138,17 @@ enum Furniture {
         return builder.mesh
     }
 
-    static func mesh(for proposal: Proposal) -> Mesh {
+    /// `floorLevel` matters: RoomPlan's origin is wherever the scan started —
+    /// roughly phone height — so a room's floor sits a metre or more below zero.
+    /// Building a sofa up from y = 0 leaves it hanging in the air.
+    static func mesh(for proposal: Proposal, floorLevel: Float) -> Mesh {
         var placed = mesh(for: proposal.kind, size: proposal.size)
         let c = cos(proposal.rotation), s = sin(proposal.rotation)
         let transform = simd_float4x4(
             SIMD4(c, 0, s, 0),
             SIMD4(0, 1, 0, 0),
             SIMD4(-s, 0, c, 0),
-            SIMD4(proposal.position.x, 0, proposal.position.y, 1)
+            SIMD4(proposal.position.x, floorLevel, proposal.position.y, 1)
         )
         placed = placed.transformed(by: transform)
         return placed

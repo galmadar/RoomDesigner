@@ -10,7 +10,14 @@ struct PlanProjection {
     let scale: CGFloat
     let origin: CGPoint
 
-    init?(plan: FloorPlan, size: CGSize, inset: CGFloat = 24) {
+    /// Zoom is applied about `focus`, which stays pinned to the middle of the
+    /// view — so whatever you are working on cannot scroll off the edge.
+    var zoom: CGFloat = 1
+    var focus: SIMD2<Float>?
+    private var viewCentre: CGPoint = .zero
+
+    init?(plan: FloorPlan, size: CGSize, inset: CGFloat = 24,
+          zoom: CGFloat = 1, focus: SIMD2<Float>? = nil) {
         let (low, high) = plan.bounds
         let extent = high - low
         guard extent.x > 0, extent.y > 0,
@@ -24,17 +31,34 @@ struct PlanProjection {
         self.scale = scale
         self.origin = CGPoint(x: (size.width - drawn.width) / 2,
                               y: (size.height - drawn.height) / 2)
+        self.zoom = zoom
+        self.focus = focus
+        self.viewCentre = CGPoint(x: size.width / 2, y: size.height / 2)
     }
 
-    func point(_ position: SIMD2<Float>) -> CGPoint {
+    private func unzoomed(_ position: SIMD2<Float>) -> CGPoint {
         CGPoint(x: origin.x + CGFloat(position.x - low.x) * scale,
                 y: origin.y + CGFloat(position.y - low.y) * scale)
     }
 
-    func position(_ point: CGPoint) -> SIMD2<Float> {
-        SIMD2(low.x + Float((point.x - origin.x) / scale),
-              low.y + Float((point.y - origin.y) / scale))
+    func point(_ position: SIMD2<Float>) -> CGPoint {
+        let flat = unzoomed(position)
+        guard zoom != 1, let focus else { return flat }
+        let anchor = unzoomed(focus)
+        return CGPoint(x: viewCentre.x + (flat.x - anchor.x) * zoom,
+                       y: viewCentre.y + (flat.y - anchor.y) * zoom)
     }
 
-    func length(_ metres: Float) -> CGFloat { CGFloat(metres) * scale }
+    func position(_ point: CGPoint) -> SIMD2<Float> {
+        var flat = point
+        if zoom != 1, let focus {
+            let anchor = unzoomed(focus)
+            flat = CGPoint(x: anchor.x + (point.x - viewCentre.x) / zoom,
+                           y: anchor.y + (point.y - viewCentre.y) / zoom)
+        }
+        return SIMD2(low.x + Float((flat.x - origin.x) / scale),
+                     low.y + Float((flat.y - origin.y) / scale))
+    }
+
+    func length(_ metres: Float) -> CGFloat { CGFloat(metres) * scale * zoom }
 }

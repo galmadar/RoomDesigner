@@ -63,8 +63,8 @@ struct RoomDetailView: View {
             .pickerStyle(.segmented)
 
             Text(mode == .camera
-                 ? "Drag the dot to move. Drag the small circle to turn. The shaded wedge is what ends up in the picture."
-                 : "Add a piece below, then drag it into place. The thick edge is its front.")
+                 ? "Drag the dot to move. Drag the small circle to turn. Pinch to zoom, double-tap to fit."
+                 : "Add a piece below, then drag it into place. The thick edge is its front. Pinch to zoom.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
