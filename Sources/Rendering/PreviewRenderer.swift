@@ -47,6 +47,26 @@ final class PreviewRenderer: ObservableObject {
         pump()
     }
 
+    /// A one-off render at full size, off the display path.
+    ///
+    /// Used when generating: the picture on screen may be the solid view, which
+    /// is for looking at rather than conditioning on, so the image actually sent
+    /// has to be rendered separately.
+    func snapshot(position: SIMD2<Float>, yaw: Float, pitch: Float, eyeHeight: Float,
+                  fieldOfView: Float, kind: ConditioningImages.Kind) async -> UIImage? {
+        guard let renderer, let mesh, !mesh.isEmpty else { return nil }
+        return await withCheckedContinuation { continuation in
+            queue.async {
+                let camera = Camera.standing(at: position, in: mesh.bounds,
+                                             eyeHeight: eyeHeight, yaw: yaw,
+                                             pitch: pitch, fieldOfView: fieldOfView)
+                let image = (try? renderer.render(mesh, camera: camera, size: Self.finalSize))
+                    .flatMap { ConditioningImages.image(kind, from: $0) }
+                continuation.resume(returning: image)
+            }
+        }
+    }
+
     /// Renders the newest request and drops everything queued behind it — during
     /// a drag only the latest position is worth drawing.
     private func pump() {

@@ -69,6 +69,7 @@ struct ProxyMeshLibrary {
             for index in indices {
                 mesh.positions.append(corners[index])
                 mesh.normals.append(normal)
+                mesh.colours.append(Palette.scanned)
             }
             mesh.indices.append(contentsOf: [base, base + 1, base + 2, base, base + 2, base + 3])
         }
@@ -77,6 +78,10 @@ struct ProxyMeshLibrary {
 }
 
 extension Mesh {
+    mutating func tint(_ colour: SIMD3<Float>) {
+        colours = Array(repeating: colour, count: positions.count)
+    }
+
     func transformed(by transform: simd_float4x4) -> Mesh {
         var copy = self
         let rotation = simd_float3x3(transform.columns.0.xyz,

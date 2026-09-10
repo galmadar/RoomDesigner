@@ -24,13 +24,17 @@ enum RoomGeometry {
         }
 
         for wall in room.walls {
-            mesh.append(surface(wall, apertures: aperturesByParent[wall.identifier] ?? []))
+            mesh.append(surface(wall, apertures: aperturesByParent[wall.identifier] ?? [],
+                                colour: Palette.wall))
         }
         for floor in room.floors {
-            mesh.append(surface(floor, apertures: []))
+            mesh.append(surface(floor, apertures: [], colour: Palette.floor))
         }
+        mesh.append(ceiling(of: room))
         for object in room.objects {
-            mesh.append(proxies.mesh(for: object))
+            var solid = proxies.mesh(for: object)
+            solid.tint(Palette.scanned)
+            mesh.append(solid)
         }
         // Proposed pieces are ordinary geometry by the time the renderer sees
         // them — the generator cannot tell scanned from imagined, which is
@@ -38,15 +42,40 @@ enum RoomGeometry {
         let floorLevel = room.floors.first.map { $0.transform.columns.3.y }
             ?? (mesh.isEmpty ? 0 : mesh.bounds.min.y)
         for proposal in proposals {
-            mesh.append(Furniture.mesh(for: proposal, floorLevel: floorLevel))
+            var piece = Furniture.mesh(for: proposal, floorLevel: floorLevel)
+            piece.tint(Palette.proposed)
+            mesh.append(piece)
         }
         return mesh
     }
 
     // MARK: -
 
+    /// RoomPlan reports no ceiling at all, which leaves a hole above every
+    /// wall. That reads badly in the solid view and, more importantly, tells the
+    /// generator the room is open to the sky — so one is built from the floor's
+    /// own outline, raised to the top of the walls.
+    private static func ceiling(of room: CapturedRoom) -> Mesh {
+        guard let floor = room.floors.first,
+              let top = room.walls.map({ $0.transform.columns.3.y + $0.dimensions.y / 2 }).max()
+        else { return Mesh() }
+
+        var transform = floor.transform
+        transform.columns.3.y = top
+
+        let outline = polygon(of: floor)
+        guard outline.count >= 3 else { return Mesh() }
+
+        var mesh = Mesh()
+        mesh.append(polygon: outline,
+                    triangles: Triangulation.earClip(outline),
+                    transform: transform, colour: Palette.ceiling)
+        return mesh
+    }
+
     private static func surface(_ surface: CapturedRoom.Surface,
-                                apertures: [CapturedRoom.Surface]) -> Mesh {
+                                apertures: [CapturedRoom.Surface],
+                                colour: SIMD3<Float>) -> Mesh {
         let outline = polygon(of: surface)
         guard outline.count >= 3 else { return Mesh() }
 
@@ -57,7 +86,7 @@ enum RoomGeometry {
             // floors, which is what `polygonCorners` is for.
             mesh.append(polygon: outline,
                         triangles: Triangulation.earClip(outline),
-                        transform: surface.transform)
+                        transform: surface.transform, colour: colour)
             return mesh
         }
 
@@ -71,7 +100,7 @@ enum RoomGeometry {
             let corners = piece.corners
             mesh.append(polygon: corners,
                         triangles: Triangulation.earClip(corners),
-                        transform: surface.transform)
+                        transform: surface.transform, colour: colour)
         }
         return mesh
     }

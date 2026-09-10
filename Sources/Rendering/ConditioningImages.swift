@@ -13,12 +13,20 @@ enum ConditioningImages {
     /// six flat colours. Depth suffers next. A line drawing suffers least,
     /// because box edges still read as plausible furniture silhouettes.
     enum Kind: String, CaseIterable, Identifiable {
-        case depth, lines, normal
+        case room, depth, lines, normal
         var id: String { rawValue }
+
+        var label: String { self == .room ? "Room" : rawValue.capitalized }
+
+        /// The solid view is for looking at, not for conditioning on — it shows
+        /// what was scanned. Sending it to the model would be conditioning on
+        /// invented colours.
+        var isConditioning: Bool { self != .room }
     }
 
     static func image(_ kind: Kind, from buffers: Renderer.Buffers) -> UIImage? {
         switch kind {
+        case .room:   return solid(buffers)
         case .depth:  return depth(buffers)
         case .normal: return normal(buffers)
         case .lines:  return lines(buffers)
@@ -38,6 +46,10 @@ enum ConditioningImages {
             pixels[index] = UInt8(clamping: Int((1 - normalised) * 255))
         }
         return grayscale(pixels, width: buffers.width, height: buffers.height)
+    }
+
+    static func solid(_ buffers: Renderer.Buffers) -> UIImage? {
+        rgba(buffers.solid, width: buffers.width, height: buffers.height)
     }
 
     static func normal(_ buffers: Renderer.Buffers) -> UIImage? {

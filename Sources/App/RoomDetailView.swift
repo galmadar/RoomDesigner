@@ -12,7 +12,7 @@ struct RoomDetailView: View {
     @State private var fieldOfView: Float = 65 * .pi / 180
     @State private var pitch: Float = 0
     @State private var eyeHeight: Float = 1.5
-    @State private var conditioning: ConditioningImages.Kind = .depth
+    @State private var conditioning: ConditioningImages.Kind = .room
     @State private var brief = ""
     @State private var strength: Double = 1.0
     @State private var isGenerating = false
@@ -379,10 +379,15 @@ struct RoomDetailView: View {
 
             Picker("Conditioning", selection: $conditioning) {
                 ForEach(ConditioningImages.Kind.allCases) {
-                    Text($0.rawValue.capitalized).tag($0)
+                    Text($0.label).tag($0)
                 }
             }
             .pickerStyle(.segmented)
+
+            if !conditioning.isConditioning {
+                Text("The room as scanned — grey is what RoomPlan found, green is what you added. Designing from here uses the depth view.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -437,7 +442,19 @@ struct RoomDetailView: View {
         guard previews.bounds == nil, let captured = room.capturedRoom else { return }
         let built = RoomGeometry.build(from: captured, proposals: room.proposals)
         previews.load(built)
-        cameraPosition = Camera.centre(of: built.bounds)
+
+        // Open on a shot worth looking at. Standing in the middle facing dead
+        // level puts a blank wall in the frame; from a corner, angled slightly
+        // down, you see the floor, the far corner and whatever is in between —
+        // which is how a room actually gets photographed.
+        let bounds = built.bounds
+        let centre = Camera.centre(of: bounds)
+        let corner = SIMD2(bounds.min.x + (bounds.max.x - bounds.min.x) * 0.18,
+                           bounds.min.z + (bounds.max.z - bounds.min.z) * 0.18)
+        cameraPosition = Camera.clamp(corner, in: bounds)
+        let toCentre = centre - cameraPosition
+        yaw = atan2(toCentre.x, -toCentre.y)
+        pitch = -8 * .pi / 180
         render()
     }
 
@@ -454,14 +471,24 @@ struct RoomDetailView: View {
     }
 
     private func generate() async {
-        guard let preview = previews.image else { return }
         isGenerating = true
         defer { isGenerating = false }
 
+        // The solid view shows what was scanned; it is not something to condition
+        // on, since its colours are invented. Fall back to depth.
+        let kind: ConditioningImages.Kind = conditioning.isConditioning ? conditioning : .depth
+        guard let conditioningImage = await previews.snapshot(
+            position: cameraPosition, yaw: yaw, pitch: pitch, eyeHeight: eyeHeight,
+            fieldOfView: fieldOfView, kind: kind)
+        else {
+            failure = "The viewpoint could not be rendered."
+            return
+        }
+
         do {
             let images = try await PlanService().generate(
-                from: preview,
-                brief: .init(prompt: brief, strength: Float(strength), conditioning: conditioning)
+                from: conditioningImage,
+                brief: .init(prompt: brief, strength: Float(strength), conditioning: kind)
             )
             let encoded = images.compactMap { $0.pngData() }
             guard !encoded.isEmpty else {

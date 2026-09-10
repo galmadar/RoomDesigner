@@ -16,6 +16,8 @@ final class Renderer {
         let depth: [Float]
         /// Camera-space normals, already mapped into 0...1, RGBA order.
         let normal: [UInt8]
+        /// The room drawn as a room: flat colours with a simple headlight.
+        let solid: [UInt8]
 
         func depthAt(x: Int, y: Int) -> Float { depth[y * width + x] }
     }
@@ -49,7 +51,10 @@ final class Renderer {
         vertexDescriptor.attributes[1].format = .float3
         vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
         vertexDescriptor.attributes[1].bufferIndex = 0
-        vertexDescriptor.layouts[0].stride = MemoryLayout<SIMD3<Float>>.stride * 2
+        vertexDescriptor.attributes[2].format = .float3
+        vertexDescriptor.attributes[2].offset = MemoryLayout<SIMD3<Float>>.stride * 2
+        vertexDescriptor.attributes[2].bufferIndex = 0
+        vertexDescriptor.layouts[0].stride = MemoryLayout<SIMD3<Float>>.stride * 3
 
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertexFunction
@@ -57,6 +62,7 @@ final class Renderer {
         descriptor.vertexDescriptor = vertexDescriptor
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm      // normals
         descriptor.colorAttachments[1].pixelFormat = .r32Float        // linear depth
+        descriptor.colorAttachments[2].pixelFormat = .rgba8Unorm      // the room, shaded
         descriptor.depthAttachmentPixelFormat = .depth32Float
         pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
 
@@ -74,10 +80,11 @@ final class Renderer {
 
         // Interleave once; the vertex descriptor above expects position+normal.
         var vertices: [SIMD3<Float>] = []
-        vertices.reserveCapacity(mesh.positions.count * 2)
+        vertices.reserveCapacity(mesh.positions.count * 3)
         for index in mesh.positions.indices {
             vertices.append(mesh.positions[index])
             vertices.append(index < mesh.normals.count ? mesh.normals[index] : SIMD3(0, 1, 0))
+            vertices.append(index < mesh.colours.count ? mesh.colours[index] : Palette.wall)
         }
 
         guard let vertexBuffer = device.makeBuffer(
@@ -92,6 +99,7 @@ final class Renderer {
 
         let normalTexture = makeTexture(format: .rgba8Unorm, size: size)
         let depthTexture = makeTexture(format: .r32Float, size: size)
+        let solidTexture = makeTexture(format: .rgba8Unorm, size: size)
         let zBuffer = makeTexture(format: .depth32Float, size: size, readable: false)
 
         let pass = MTLRenderPassDescriptor()
@@ -105,6 +113,11 @@ final class Renderer {
         // Cleared to "infinitely far", so untouched pixels read as no geometry.
         pass.colorAttachments[1].clearColor = MTLClearColor(red: Double(Float.greatestFiniteMagnitude),
                                                             green: 0, blue: 0, alpha: 0)
+        pass.colorAttachments[2].texture = solidTexture
+        pass.colorAttachments[2].loadAction = .clear
+        pass.colorAttachments[2].storeAction = .store
+        pass.colorAttachments[2].clearColor = MTLClearColor(red: 0.05, green: 0.05,
+                                                            blue: 0.06, alpha: 1)
         pass.depthAttachment.texture = zBuffer
         pass.depthAttachment.loadAction = .clear
         pass.depthAttachment.storeAction = .dontCare
@@ -139,7 +152,8 @@ final class Renderer {
 
         return Buffers(width: size, height: size,
                        depth: readFloats(depthTexture, size: size),
-                       normal: readBytes(normalTexture, size: size))
+                       normal: readBytes(normalTexture, size: size),
+                       solid: readBytes(solidTexture, size: size))
     }
 
     // MARK: -
