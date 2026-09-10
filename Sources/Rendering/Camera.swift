@@ -16,7 +16,7 @@ struct Camera {
                          pitch: Float = 0,
                          fieldOfView: Float = 65 * .pi / 180) -> Camera {
         let inside = clamp(ground, in: bounds)
-        let height = min(bounds.min.y + eyeHeight, bounds.max.y - 0.1)
+        let height = min(bounds.min.y + eyeHeight, bounds.max.y - 0.05)
         let eye = SIMD3(inside.x, height, inside.y)
         let direction = SIMD3(sin(yaw) * cos(pitch), sin(pitch), -cos(yaw) * cos(pitch))
         return Camera(eye: eye, target: eye + direction, fieldOfView: fieldOfView)

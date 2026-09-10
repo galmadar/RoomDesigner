@@ -10,6 +10,8 @@ struct RoomDetailView: View {
     @State private var cameraPosition: SIMD2<Float> = .zero
     @State private var yaw: Float = 0
     @State private var fieldOfView: Float = 65 * .pi / 180
+    @State private var pitch: Float = 0
+    @State private var eyeHeight: Float = 1.5
     @State private var conditioning: ConditioningImages.Kind = .depth
     @State private var brief = ""
     @State private var strength: Double = 1.0
@@ -61,6 +63,8 @@ struct RoomDetailView: View {
         .onChange(of: yaw) { render() }
         .onChange(of: conditioning) { render() }
         .onChange(of: fieldOfView) { render() }
+        .onChange(of: pitch) { render() }
+        .onChange(of: eyeHeight) { render() }
         .onChange(of: room.proposalsData) { rebuild() }
         .onChange(of: isDragging) { if !isDragging { render() } }   // sharpen on release
     }
@@ -101,6 +105,17 @@ struct RoomDetailView: View {
                                           set: { fieldOfView = Float($0) }),
                            in: Double(30 * Float.pi / 180)...Double(110 * Float.pi / 180))
                     Text("Lens \(Int(fieldOfView * 180 / .pi))° — \(lensDescription)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(spacing: 12) {
+                Image(systemName: "figure.stand").foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Slider(value: Binding(get: { Double(eyeHeight) },
+                                          set: { eyeHeight = Float($0) }),
+                           in: 0.4...2.2)
+                    Text("Eye height \(eyeHeight, format: .number.precision(.fractionLength(2))) m — \(heightDescription)")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -335,6 +350,13 @@ struct RoomDetailView: View {
         render()
     }
 
+    private var heightDescription: String {
+        if eyeHeight < 0.8 { return "low, like sitting on the floor" }
+        if eyeHeight < 1.3 { return "seated" }
+        if eyeHeight < 1.8 { return "standing" }
+        return "high, looking down into the room"
+    }
+
     private var lensDescription: String {
         let degrees = fieldOfView * 180 / .pi
         if degrees < 45 { return "tight, picks out one corner" }
@@ -352,16 +374,8 @@ struct RoomDetailView: View {
 
     private var framing: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let preview = previews.image {
-                Image(uiImage: preview)
-                    .resizable().scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemBackground))
-                    .frame(height: 200)
-                    .overlay(ProgressView())
-            }
+            ViewfinderView(image: previews.image, yaw: $yaw, pitch: $pitch,
+                           isDragging: $isDragging)
 
             Picker("Conditioning", selection: $conditioning) {
                 ForEach(ConditioningImages.Kind.allCases) {
@@ -434,7 +448,8 @@ struct RoomDetailView: View {
     }
 
     private func render() {
-        previews.request(position: cameraPosition, yaw: yaw, fieldOfView: fieldOfView,
+        previews.request(position: cameraPosition, yaw: yaw, pitch: pitch,
+                         eyeHeight: eyeHeight, fieldOfView: fieldOfView,
                          kind: conditioning, draft: isDragging)
     }
 
