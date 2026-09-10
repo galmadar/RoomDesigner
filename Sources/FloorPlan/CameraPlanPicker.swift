@@ -20,6 +20,11 @@ struct CameraPlanPicker: View {
     @Binding var proposals: [Proposal]
     @Binding var selection: Proposal.ID?
 
+    /// Called once when a piece is picked up, never per drag frame — otherwise
+    /// dragging a sofa across the room would fill the undo stack with every
+    /// pixel it passed through.
+    var onBeginEdit: () -> Void = {}
+
     @State private var grabbed: Grab?
     @State private var zoom: CGFloat = 1
     @State private var zoomAnchor: CGFloat = 1
@@ -122,6 +127,7 @@ struct CameraPlanPicker: View {
             // Topmost first, so a piece dropped on another can be picked up again.
             for proposal in proposals.reversed() where contains(proposal, location, projection) {
                 selection = proposal.id
+                onBeginEdit()
                 return .proposal(proposal.id)
             }
             selection = nil

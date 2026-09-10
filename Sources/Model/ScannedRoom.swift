@@ -25,6 +25,10 @@ final class ScannedRoom {
     /// the observation traps of a stored array.
     var proposalsData: Data?
 
+    /// Arrangements saved deliberately, so a layout worth keeping survives the
+    /// experimenting that comes after it.
+    var arrangementsData: Data?
+
     init(name: String, createdAt: Date = .now) {
         self.name = name
         self.createdAt = createdAt
@@ -37,6 +41,14 @@ final class ScannedRoom {
             return (try? JSONDecoder().decode([Proposal].self, from: proposalsData)) ?? []
         }
         set { proposalsData = try? JSONEncoder().encode(newValue) }
+    }
+
+    var arrangements: [Arrangement] {
+        get {
+            guard let arrangementsData else { return [] }
+            return (try? JSONDecoder().decode([Arrangement].self, from: arrangementsData)) ?? []
+        }
+        set { arrangementsData = try? JSONEncoder().encode(newValue) }
     }
 
     var capturedRoom: CapturedRoom? {

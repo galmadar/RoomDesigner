@@ -18,6 +18,10 @@ struct RoomDetailView: View {
     @State private var enlarged: UIImage?
     @State private var mode: CameraPlanPicker.Mode = .camera
     @State private var selection: Proposal.ID?
+    @State private var undoStack: [[Proposal]] = []
+    @State private var redoStack: [[Proposal]] = []
+    @State private var isNamingArrangement = false
+    @State private var arrangementName = ""
 
     var body: some View {
         ScrollView {
@@ -38,6 +42,13 @@ struct RoomDetailView: View {
         .alert("Couldn't generate", isPresented: .constant(failure != nil)) {
             Button("OK") { failure = nil }
         } message: { Text(failure ?? "") }
+        .alert("Keep this arrangement", isPresented: $isNamingArrangement) {
+            TextField("Name", text: $arrangementName)
+            Button("Keep") { keepArrangement() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saves the furniture as it stands now, so you can come back to it after trying something else.")
+        }
         .fullScreenCover(item: $enlarged) { image in
             ZStack {
                 Color.black.ignoresSafeArea()
@@ -71,7 +82,8 @@ struct RoomDetailView: View {
             CameraPlanPicker(plan: plan, mode: mode, position: $cameraPosition,
                              yaw: $yaw, isDragging: $isDragging,
                              fieldOfView: $fieldOfView,
-                             proposals: proposalsBinding, selection: $selection)
+                             proposals: proposalsBinding, selection: $selection,
+                             onBeginEdit: { checkpoint() })
                 .frame(height: 320)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
@@ -166,7 +178,117 @@ struct RoomDetailView: View {
                 Text("Tap a piece on the plan to turn, resize or remove it.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+
+            history
+            saved
         }
+    }
+
+    private var history: some View {
+        HStack(spacing: 8) {
+            Button { undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
+                .disabled(undoStack.isEmpty)
+            Button { redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
+                .disabled(redoStack.isEmpty)
+            Spacer()
+            Button { arrangementName = suggestedName; isNamingArrangement = true } label: {
+                Label("Keep", systemImage: "bookmark")
+            }
+            .disabled(room.proposals.isEmpty)
+            Button(role: .destructive) { clearAll() } label: {
+                Label("Clear", systemImage: "trash")
+            }
+            .disabled(room.proposals.isEmpty)
+        }
+        .buttonStyle(.bordered)
+        .labelStyle(.iconOnly)
+        .font(.body)
+    }
+
+    @ViewBuilder private var saved: some View {
+        if !room.arrangements.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Kept arrangements").font(.caption).foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(room.arrangements) { arrangement in
+                            Button { restore(arrangement) } label: {
+                                VStack(spacing: 2) {
+                                    Text(arrangement.name).font(.caption)
+                                    Text("^[\(arrangement.proposals.count) piece](inflect: true)")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 10).padding(.vertical, 6)
+                            }
+                            .buttonStyle(.bordered)
+                            .contextMenu {
+                                Button(role: .destructive) { forget(arrangement) } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 1)
+                }
+                Text("Tap to restore. Long-press to delete.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - History
+
+    private var suggestedName: String { "Layout \(room.arrangements.count + 1)" }
+
+    /// Snapshot the arrangement *before* it changes. Called at the start of a
+    /// drag rather than during it, so one gesture is one undo step.
+    private func checkpoint() {
+        undoStack.append(room.proposals)
+        if undoStack.count > 40 { undoStack.removeFirst() }
+        redoStack.removeAll()
+    }
+
+    private func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        redoStack.append(room.proposals)
+        apply(previous)
+    }
+
+    private func redo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(room.proposals)
+        apply(next)
+    }
+
+    private func apply(_ proposals: [Proposal]) {
+        room.proposals = proposals
+        if let selection, !proposals.contains(where: { $0.id == selection }) {
+            self.selection = nil
+        }
+        rebuild()
+    }
+
+    private func clearAll() {
+        checkpoint()
+        room.proposals = []
+        selection = nil
+        rebuild()
+    }
+
+    private func keepArrangement() {
+        let name = arrangementName.trimmingCharacters(in: .whitespaces)
+        room.arrangements = room.arrangements
+            + [Arrangement(name: name.isEmpty ? suggestedName : name,
+                           proposals: room.proposals)]
+    }
+
+    private func restore(_ arrangement: Arrangement) {
+        checkpoint()
+        apply(arrangement.proposals)
+    }
+
+    private func forget(_ arrangement: Arrangement) {
+        room.arrangements = room.arrangements.filter { $0.id != arrangement.id }
     }
 
     private func dimensions(of proposal: Proposal) -> String {
@@ -178,6 +300,7 @@ struct RoomDetailView: View {
     private func add(_ kind: Furniture.Kind) {
         guard let bounds = previews.bounds else { return }
         let ahead = cameraPosition + SIMD2(sin(yaw), -cos(yaw)) * 2.0
+        checkpoint()
         var proposal = Proposal(kind: kind, position: Camera.clamp(ahead, in: bounds))
         proposal.rotation = yaw + .pi        // facing back towards the camera
         room.proposals = room.proposals + [proposal]
@@ -196,12 +319,14 @@ struct RoomDetailView: View {
     }
 
     private func remove(_ proposal: Proposal) {
+        checkpoint()
         room.proposals = room.proposals.filter { $0.id != proposal.id }
         selection = nil
         render()
     }
 
     private func mutate(_ proposal: Proposal, _ change: (inout Proposal) -> Void) {
+        checkpoint()
         guard let index = room.proposals.firstIndex(where: { $0.id == proposal.id })
         else { return }
         var updated = room.proposals
