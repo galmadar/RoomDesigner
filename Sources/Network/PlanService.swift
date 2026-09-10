@@ -13,14 +13,11 @@ struct PlanService {
     }
 
     enum Failure: LocalizedError {
-        case notConfigured
         case badImage
         case server(status: Int, body: String)
 
         var errorDescription: String? {
             switch self {
-            case .notConfigured:
-                return "No server address set yet. Add one in Settings."
             case .badImage:
                 return "The rendered image could not be encoded."
             case .server(let status, let body):
@@ -29,12 +26,24 @@ struct PlanService {
         }
     }
 
-    /// Set once, in Settings. Nil until then, so the app is honest about it
-    /// rather than failing at the point of use.
-    static var baseURL: URL? {
+    /// The deployed companion service, built in so that a fresh install — and a
+    /// second device — can generate without anyone visiting Settings first.
+    static let defaultBaseURL = URL(string: "https://room-designer-server.vercel.app")!
+
+    /// An address typed in Settings, or nil to fall back to ``defaultBaseURL``.
+    /// Assigning nil forgets the override rather than storing something empty.
+    static var baseURLOverride: URL? {
         get { UserDefaults.standard.url(forKey: "serverBaseURL") }
-        set { UserDefaults.standard.set(newValue, forKey: "serverBaseURL") }
+        set {
+            guard let newValue else {
+                return UserDefaults.standard.removeObject(forKey: "serverBaseURL")
+            }
+            UserDefaults.standard.set(newValue, forKey: "serverBaseURL")
+        }
     }
+
+    /// Where requests actually go. Non-optional: there is always somewhere to ask.
+    static var baseURL: URL { baseURLOverride ?? defaultBaseURL }
 
     private struct Request: Encodable {
         let prompt: String
@@ -48,10 +57,9 @@ struct PlanService {
     }
 
     func generate(from image: UIImage, brief: Brief) async throws -> [UIImage] {
-        guard let baseURL = Self.baseURL else { throw Failure.notConfigured }
         guard let png = image.pngData() else { throw Failure.badImage }
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("generate"))
+        var request = URLRequest(url: Self.baseURL.appendingPathComponent("generate"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 180        // generation routinely takes a minute
