@@ -29,6 +29,14 @@ final class ScannedRoom {
     /// experimenting that comes after it.
     var arrangementsData: Data?
 
+    /// Photos taken while scanning. Rooms scanned before photos existed have none.
+    @Relationship(deleteRule: .cascade, inverse: \ScanPhoto.room)
+    var photos: [ScanPhoto]? = []
+
+    /// The last live room RoomPlan reported before processing, in the AR
+    /// session's own frame — kept to check photo poses against the final room.
+    var liveRoomData: Data?
+
     init(name: String, createdAt: Date = .now) {
         self.name = name
         self.createdAt = createdAt
@@ -57,5 +65,14 @@ final class ScannedRoom {
             return try? JSONDecoder().decode(CapturedRoom.self, from: capturedRoomData)
         }
         set { capturedRoomData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
+
+    /// In the order they were taken; a stored relationship has none of its own.
+    var sortedPhotos: [ScanPhoto] {
+        (photos ?? []).sorted { $0.takenAt < $1.takenAt }
+    }
+
+    var liveRoom: CapturedRoom? {
+        liveRoomData.flatMap { try? JSONDecoder().decode(CapturedRoom.self, from: $0) }
     }
 }
