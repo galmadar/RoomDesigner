@@ -69,10 +69,16 @@ struct RoomListView: View {
                 path.append(room)
             }
             .fullScreenCover(isPresented: $isScanning) {
-                ScanFlowView { captured in
+                ScanFlowView { scan in
                     let room = ScannedRoom(name: "Room \(rooms.count + 1)")
-                    room.capturedRoom = captured
+                    room.capturedRoom = scan.room
+                    room.liveRoomData = scan.liveRoomData
                     context.insert(room)
+                    for shot in scan.shots {
+                        let photo = ScanPhoto(shot)
+                        context.insert(photo)
+                        photo.room = room
+                    }
                 }
             }
             .overlay(alignment: .bottom) {

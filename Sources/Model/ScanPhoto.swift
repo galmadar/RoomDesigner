@@ -29,6 +29,11 @@ final class ScanPhoto {
         self.viewpointData = (try? JSONEncoder().encode(viewpoint)) ?? Data()
     }
 
+    convenience init(_ shot: ScanCamera.Shot) {
+        self.init(takenAt: shot.takenAt, imageData: shot.jpeg,
+                  thumbnailData: shot.thumbnail, viewpoint: shot.viewpoint)
+    }
+
     var viewpoint: PhotoViewpoint? {
         try? JSONDecoder().decode(PhotoViewpoint.self, from: viewpointData)
     }

@@ -1,14 +1,19 @@
 import RoomPlan
-import SwiftData
 import SwiftUI
 
 /// Full-screen scanning: walk the room, take photos along the way, tap Done,
-/// get a `CapturedRoom` back with the photos hung on it.
+/// get a `CapturedRoom` back along with the photos.
 struct ScanFlowView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var context
+    /// Everything one scan produced, handed over whole so the caller can build the room in one place.
+    struct Result {
+        let room: CapturedRoom
+        let shots: [ScanCamera.Shot]
+        let liveRoomData: Data?
+    }
 
-    let onCaptured: (CapturedRoom) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    let onCaptured: (Result) -> Void
 
     @StateObject private var camera = ScanCamera()
     @State private var isFinished = false
@@ -78,28 +83,10 @@ struct ScanFlowView: View {
             }
     }
 
-    /// The caller creates the room, so it is found afterwards as the one that
-    /// is new — which leaves the caller's side of this untouched.
     private func finish(with captured: CapturedRoom) async {
         let shots = await camera.collected()
-        let before = Set(rooms().map(\.persistentModelID))
-        onCaptured(captured)
-
-        let created = rooms().filter { !before.contains($0.persistentModelID) }
-        if created.count == 1, let room = created.first {
-            room.liveRoomData = camera.liveRoomData
-            for shot in shots {
-                let photo = ScanPhoto(takenAt: shot.takenAt, imageData: shot.jpeg,
-                                      thumbnailData: shot.thumbnail, viewpoint: shot.viewpoint)
-                context.insert(photo)
-                photo.room = room
-            }
-        }
+        onCaptured(Result(room: captured, shots: shots, liveRoomData: camera.liveRoomData))
         dismiss()
-    }
-
-    private func rooms() -> [ScannedRoom] {
-        (try? context.fetch(FetchDescriptor<ScannedRoom>())) ?? []
     }
 
     private var unsupported: some View {
