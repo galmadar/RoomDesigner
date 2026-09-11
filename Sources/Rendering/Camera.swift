@@ -7,6 +7,8 @@ struct Camera {
     var fieldOfView: Float = 65 * .pi / 180
     var near: Float = 0.05
     var far: Float = 40
+    /// Screen-up in world space. Only a photo's viewpoint needs roll.
+    var up: SIMD3<Float> = SIMD3(0, 1, 0)
 
     /// Standing at a chosen spot on the floor, at eye height, facing `yaw`.
     static func standing(at ground: SIMD2<Float>,
@@ -42,7 +44,7 @@ struct Camera {
         let length = simd_length(forward)
         forward = length > 1e-6 ? forward / length : SIMD3(0, 0, -1)
 
-        var up = SIMD3<Float>(0, 1, 0)
+        var up = simd_normalize(self.up)
         if abs(simd_dot(forward, up)) > 0.999 { up = SIMD3(0, 0, 1) }
 
         let right = simd_normalize(simd_cross(forward, up))

@@ -38,6 +38,7 @@ struct RoomDetailView: View {
             VStack(alignment: .leading, spacing: 22) {
                 if let captured = room.capturedRoom {
                     results
+                    ScanPhotosSection(room: room)
                     viewpoint(FloorPlan(room: captured))
                     framing
                     designBrief
