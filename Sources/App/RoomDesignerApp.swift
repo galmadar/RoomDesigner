@@ -7,6 +7,6 @@ struct RoomDesignerApp: App {
         WindowGroup {
             RoomListView()
         }
-        .modelContainer(for: ScannedRoom.self)
+        .modelContainer(for: [ScannedRoom.self, LibraryObject.self])
     }
 }
