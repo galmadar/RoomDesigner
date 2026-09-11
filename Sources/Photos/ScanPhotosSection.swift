@@ -16,8 +16,16 @@ struct ScanPhotosSection: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(photos) { photo in
+                        ForEach(Array(photos.enumerated()), id: \.element.persistentModelID) { index, photo in
                             thumbnail(photo)
+                                // Numbered as the floor plan's photo spots are.
+                                .overlay(alignment: .topLeading) {
+                                    Text("\(index + 1)")
+                                        .font(.caption2.bold()).foregroundStyle(.white)
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4))
+                                        .padding(5)
+                                }
                                 .onTapGesture { opened = photo }
                                 .contextMenu {
                                     Button(role: .destructive) { remove(photo) } label: {
