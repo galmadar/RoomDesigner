@@ -33,6 +33,11 @@ final class ScannedRoom {
     @Relationship(deleteRule: .cascade, inverse: \ScanPhoto.room)
     var photos: [ScanPhoto]? = []
 
+    /// Pictures made by "Design with photos". Separate from `conceptImages`,
+    /// which the one-image Flux flow keeps using as it always has.
+    @Relationship(deleteRule: .cascade, inverse: \GeneratedPicture.room)
+    var pictures: [GeneratedPicture]? = []
+
     /// The last live room RoomPlan reported before processing, in the AR
     /// session's own frame — kept to check photo poses against the final room.
     var liveRoomData: Data?
@@ -70,6 +75,10 @@ final class ScannedRoom {
     /// In the order they were taken; a stored relationship has none of its own.
     var sortedPhotos: [ScanPhoto] {
         (photos ?? []).sorted { $0.takenAt < $1.takenAt }
+    }
+
+    var sortedPictures: [GeneratedPicture] {
+        (pictures ?? []).sorted { $0.createdAt > $1.createdAt }
     }
 
     var liveRoom: CapturedRoom? {
