@@ -43,10 +43,17 @@ struct RoomListView: View {
             }
             .navigationTitle("Rooms")
             .navigationDestination(for: ScannedRoom.self) { RoomDetailView(room: $0) }
+            .navigationDestination(for: LibraryRoute.self) { _ in LibraryView() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { isShowingSettings = true } label: {
                         Label("Settings", systemImage: "gearshape")
+                    }
+                }
+                // Always shown: the library doesn't depend on having a room yet.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { path.append(LibraryRoute()) } label: {
+                        Label("Library", systemImage: "square.grid.2x2")
                     }
                 }
                 if !rooms.isEmpty {
