@@ -10,9 +10,9 @@ struct ScanView: View {
 
     @ObservedObject private var accents = RoomAccents.shared
 
-    /// One renderer for the screen's lifetime — rebuilding it per frame is what
-    /// made dragging stutter.
-    @StateObject private var previews = PreviewRenderer()
+    /// One renderer and one mesh for the screen's lifetime — rebuilding either
+    /// per frame is what made dragging stutter.
+    @StateObject private var previews = RoomPreview()
 
     @State private var position: SIMD2<Float> = .zero
     @State private var yaw: Float = 0
@@ -299,7 +299,7 @@ struct ScanView: View {
         else { return photoPreview = nil }
         let mesh = RoomGeometry.build(from: captured, proposals: room.proposals)
         let image = await ShotRenderer.shared.image(of: mesh, shot: PhotoDesignScene.shot(for: viewpoint),
-                                                    size: PreviewRenderer.finalSize, kind: kind)
+                                                    size: RoomPreview.finalSize, kind: kind)
         if !Task.isCancelled { photoPreview = image }
     }
 
