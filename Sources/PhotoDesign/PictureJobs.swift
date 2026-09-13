@@ -25,14 +25,6 @@ final class PictureJobs: ObservableObject {
         }
     }
 
-    func isWorking(in room: ScannedRoom) -> Bool {
-        jobs(for: room).contains { $0.isWorking }
-    }
-
-    func hasFailure(in room: ScannedRoom) -> Bool {
-        jobs(for: room).contains { $0.failure != nil }
-    }
-
     func start(_ order: PhotoDesignRun.Order, room: ScannedRoom, context: ModelContext) {
         let job = PhotoDesignRun(order: order, room: room, context: context)
         jobs.insert(job, at: 0)

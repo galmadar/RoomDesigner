@@ -57,7 +57,6 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
     let prompt: String
 
     @Published private(set) var stage: Stage
-    @Published private(set) var result: GeneratedPicture?
 
     /// Called whenever the run stops working, however it stopped.
     var onSettled: ((PhotoDesignRun) -> Void)?
@@ -125,13 +124,10 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
         }
     }
 
-    func reset() { if !isWorking { stage = .idle } }
-
     // MARK: - Running
 
     func start() {
         guard !isWorking, let order, let room, let context else { return }
-        result = nil
         beginAssertion()
         task = Task { [weak self] in
             await self?.run(order, room: room, context: context)
@@ -248,7 +244,6 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
             context.insert(picture)
             picture.room = room
             try? context.save()
-            result = picture
             stage = .finished
         } catch {
             // An expiry has already said what happened; don't paper over it.
