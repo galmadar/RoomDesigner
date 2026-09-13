@@ -35,6 +35,10 @@ enum Paper {
     /// Where a room has no photo to take its colour from.
     static let fallbackAccent = dynamic(light: 0xB8763C, dark: 0xD9924F)
 
+    /// Deleting and clearing. Muted brick rather than system red: it warns
+    /// without shouting over a screen this quiet.
+    static let destructive = dynamic(light: 0x9C5A52, dark: 0xCF8078)
+
     static let cardShadow = Color(
         uiColor: UIColor { $0.userInterfaceStyle == .dark
             ? UIColor.black.withAlphaComponent(0.5)

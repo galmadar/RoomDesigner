@@ -21,6 +21,7 @@ struct AddObjectView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Environment(\.roomAccent) private var accent
 
     private enum Stage: Equatable {
         case enteringLink
@@ -47,16 +48,13 @@ struct AddObjectView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            ZStack {
+                Paper.sheet.ignoresSafeArea()
                 switch stage {
                 case .enteringLink:
                     linkForm
                 case .working(let message):
-                    VStack(spacing: 12) {
-                        ProgressView()
-                        Text(message).foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    working(message)
                 case .failed(let message):
                     failure(message)
                 case .choosing:
@@ -65,13 +63,19 @@ struct AddObjectView: View {
             }
             .navigationTitle(stage == .choosing ? "Choose pictures" : "Add to library")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Paper.sheet, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .font(.system(size: 16))
+                        .foregroundStyle(Paper.secondaryInk)
                 }
                 if stage == .choosing {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") { save() }.disabled(draft.kept.isEmpty)
+                        Button("Save") { save() }
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(draft.kept.isEmpty ? Paper.secondaryInk : Paper.ink)
+                            .disabled(draft.kept.isEmpty)
                     }
                 }
             }
@@ -100,36 +104,54 @@ struct AddObjectView: View {
     // MARK: - Link
 
     private var linkForm: some View {
-        Form {
-            Section {
-                TextField("https://", text: $link)
-                    .keyboardType(.URL)
-                    .textContentType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .submitLabel(.go)
-                    .onSubmit { Task { await findPictures() } }
-            } header: {
-                Text("Product link")
-            } footer: {
-                if !link.isEmpty && Self.webURL(in: link) == nil {
-                    Text("That doesn't look like a web address. Copy the link from the product's page and paste it here.")
-                } else {
-                    Text("Copy the link from the product's page in Safari or the shop's app, then paste it here. You'll choose which pictures to keep.")
-                }
-            }
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Paste the\nproduct's link").question()
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 18)
 
-            Section {
-                Button { Task { await findPictures() } } label: {
-                    Text("Find pictures").frame(maxWidth: .infinity)
+                    TextField("https://", text: $link)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 17))
+                        .foregroundStyle(Paper.ink)
+                        .keyboardType(.URL)
+                        .textContentType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .submitLabel(.go)
+                        .onSubmit { Task { await findPictures() } }
+                        .padding(.horizontal, 18)
+                        .frame(minHeight: 56)
+                        .paperCard()
+                        .padding(.horizontal, 20)
+
+                    Text(linkNote)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Paper.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(Self.webURL(in: link) == nil)
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
+                .padding(.bottom, 16)
             }
+            .scrollDismissesKeyboard(.interactively)
+
+            Button("Find pictures") { Task { await findPictures() } }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(Self.webURL(in: link) == nil)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 28)
         }
+    }
+
+    private var linkNote: String {
+        if !link.isEmpty && Self.webURL(in: link) == nil {
+            return "That doesn't look like a web address. Copy the link from the product's page and paste it here."
+        }
+        return "Copy the link from the product's page in Safari or the shop's app, then paste it here. You'll choose which pictures to keep."
     }
 
     /// Checks the pattern first: that needs no permission, so the paste prompt
@@ -200,25 +222,50 @@ struct AddObjectView: View {
         stage = .choosing
     }
 
-    private func failure(_ message: String) -> some View {
-        ContentUnavailableView {
-            Label("Couldn't add that", systemImage: "exclamationmark.triangle")
-        } description: {
+    private func working(_ message: String) -> some View {
+        VStack(spacing: 14) {
+            ProgressView().tint(accent)
             Text(message)
-        } actions: {
-            if !link.isEmpty {
-                Button("Try again") { Task { await findPictures() } }
-                    .buttonStyle(.borderedProminent)
-                Button("Change the link") { stage = .enteringLink }
-                    .buttonStyle(.bordered)
+                .font(.system(size: 14))
+                .foregroundStyle(Paper.secondaryInk)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func failure(_ message: String) -> some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Paper.mutedInk)
+            Text("Couldn't add that")
+                .question()
+                .multilineTextAlignment(.center)
+                .padding(.top, 12)
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(Paper.secondaryInk)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 36)
+                .padding(.top, 8)
+            Spacer(minLength: 0)
+
+            VStack(spacing: 10) {
+                if link.isEmpty {
+                    Button("Choose photos") { isPickingPhotos = true }
+                        .buttonStyle(PrimaryButtonStyle())
+                } else {
+                    Button("Try again") { Task { await findPictures() } }
+                        .buttonStyle(PrimaryButtonStyle())
+                    Button("Change the link") { stage = .enteringLink }
+                        .buttonStyle(QuietButtonStyle())
+                    Button("Choose from Photos instead") { isPickingPhotos = true }
+                        .buttonStyle(QuietButtonStyle())
+                }
             }
-            Button {
-                isPickingPhotos = true
-            } label: {
-                Label(link.isEmpty ? "Choose photos" : "Choose from Photos instead",
-                      systemImage: "photo.on.rectangle")
-            }
-            .buttonStyle(.bordered)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
         }
     }
 
@@ -336,12 +383,15 @@ struct ObjectDraft {
 private struct DraftEditor: View {
     @Binding var draft: ObjectDraft
 
+    @Environment(\.roomAccent) private var accent
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text("^[\(draft.kept.count) picture](inflect: true) kept")
-                        .font(.headline)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Paper.secondaryInk)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)],
                               spacing: 10) {
                         ForEach(Array(draft.pictures.enumerated()), id: \.element.id) { index, picture in
@@ -349,29 +399,48 @@ private struct DraftEditor: View {
                         }
                     }
                     Text("Tap a picture to keep or drop it. Tap a star to make that the main picture — the one used when designing a room.")
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Paper.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Name").font(.headline)
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Name")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Paper.secondaryInk)
                     TextField("Green velvet sofa", text: $draft.name)
-                        .textFieldStyle(.roundedBorder)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 17))
+                        .foregroundStyle(Paper.ink)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 52)
+                        .paperCard(radius: 14)
                     if let source = draft.source, !source.isEmpty {
-                        Text("From \(source)").font(.caption2).foregroundStyle(.secondary)
+                        Text("From \(source)")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Paper.secondaryInk)
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 7) {
                     HStack {
-                        Text("Kind").font(.headline)
+                        Text("Kind")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Paper.secondaryInk)
                         Spacer()
                         KindPicker(kind: $draft.kind)
                     }
-                    Text(KindPicker.explanation).font(.caption2).foregroundStyle(.secondary)
+                    Text(KindPicker.explanation)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Paper.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+            .padding(.bottom, 28)
         }
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func tile(_ picture: ObjectDraft.Picture, number: Int) -> some View {
@@ -379,22 +448,21 @@ private struct DraftEditor: View {
         let isMain = draft.main == picture.id
 
         return Button { draft.toggle(picture.id) } label: {
-            Color(.secondarySystemBackground)
+            FilledImage(image: picture.preview)
                 .aspectRatio(1, contentMode: .fit)
-                .overlay { Image(uiImage: picture.preview).resizable().scaledToFill() }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .opacity(isKept ? 1 : 0.35)
                 .overlay {
-                    if isMain {
-                        RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: 3)
-                    }
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(isMain ? accent : .clear, lineWidth: 3)
                 }
                 .overlay(alignment: .topTrailing) {
-                    Image(systemName: isKept ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundStyle(isKept ? Color.accentColor : .white)
-                        .background(Circle().fill(isKept ? .white : .black.opacity(0.25)))
-                        .padding(6)
+                    Image(systemName: isKept ? "checkmark" : "circle")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(isKept ? .white : Paper.mutedInk)
+                        .frame(width: 24, height: 24)
+                        .background(isKept ? accent : Paper.card, in: Circle())
+                        .padding(7)
                 }
         }
         .buttonStyle(.plain)
@@ -403,12 +471,12 @@ private struct DraftEditor: View {
         .overlay(alignment: .topLeading) {
             Button { draft.makeMain(picture.id) } label: {
                 Image(systemName: isMain ? "star.fill" : "star")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(isMain ? .yellow : .white)
-                    .padding(7)
-                    .background(.black.opacity(0.35), in: Circle())
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(isMain ? .white : Paper.mutedInk)
+                    .frame(width: 24, height: 24)
+                    .background(isMain ? accent : Paper.card, in: Circle())
             }
-            .padding(4)
+            .padding(7)
             .accessibilityLabel(isMain ? "Main picture \(number)" : "Make picture \(number) the main one")
         }
     }
