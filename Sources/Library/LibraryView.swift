@@ -14,10 +14,13 @@ struct LibraryView: View {
     @State private var pickedItems: [PhotosPickerItem] = []
 
     var body: some View {
-        Group {
+        ZStack {
+            Paper.sheet.ignoresSafeArea()
             if objects.isEmpty { empty } else { grid }
         }
         .navigationTitle("Library")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Paper.sheet, for: .navigationBar)
         .navigationDestination(for: LibraryObject.self) { LibraryObjectView(object: $0) }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -27,8 +30,9 @@ struct LibraryView: View {
                         Label("Choose from Photos", systemImage: "photo.on.rectangle")
                     }
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    Image(systemName: "plus").foregroundStyle(Paper.ink)
                 }
+                .accessibilityLabel("Add")
             }
         }
         .photosPicker(isPresented: $isPickingPhotos, selection: $pickedItems,
@@ -43,33 +47,58 @@ struct LibraryView: View {
     }
 
     private var empty: some View {
-        ContentUnavailableView {
-            Label("Nothing saved yet", systemImage: "sofa")
-        } description: {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Image(systemName: "sofa")
+                .font(.system(size: 38, weight: .light))
+                .foregroundStyle(Paper.mutedInk)
+            Text("Nothing saved yet")
+                .question()
+                .multilineTextAlignment(.center)
+                .padding(.top, 12)
             Text("Found a sofa, a lamp or a painting you like? Paste its link from the shop, or choose photos of it. Everything here is shared by all your rooms.")
-        } actions: {
-            Button { addition = .link } label: { Label("Paste a link", systemImage: "link") }
-                .buttonStyle(.borderedProminent)
-            Button { isPickingPhotos = true } label: {
-                Label("Choose from Photos", systemImage: "photo.on.rectangle")
+                .font(.system(size: 14))
+                .foregroundStyle(Paper.secondaryInk)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 36)
+                .padding(.top, 8)
+            Spacer(minLength: 0)
+            VStack(spacing: 10) {
+                Button { addition = .link } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "link").font(.system(size: 17, weight: .semibold))
+                        Text("Paste a link")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+
+                Button("Choose from Photos") { isPickingPhotos = true }
+                    .buttonStyle(QuietButtonStyle())
             }
-            .buttonStyle(.bordered)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 28)
         }
     }
 
     private var grid: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 18) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 14)], spacing: 14) {
                 ForEach(objects) { object in
                     NavigationLink(value: object) { LibraryTile(object: object) }
                         .buttonStyle(.plain)
                 }
             }
-            .padding()
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
 
             Text("Shared by all your rooms.")
-                .font(.caption2).foregroundStyle(.secondary)
-                .padding(.bottom)
+                .font(.system(size: 13))
+                .foregroundStyle(Paper.secondaryInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+                .padding(.bottom, 24)
         }
     }
 }
@@ -79,23 +108,22 @@ private struct LibraryTile: View {
     @State private var thumbnail: UIImage?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Color(.secondarySystemBackground)
+        VStack(alignment: .leading, spacing: 0) {
+            FilledImage(image: thumbnail, symbol: "photo")
                 .aspectRatio(1, contentMode: .fit)
-                .overlay {
-                    if let thumbnail {
-                        Image(uiImage: thumbnail).resizable().scaledToFill()
-                    } else {
-                        Image(systemName: "photo").font(.title2).foregroundStyle(.tertiary)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .frame(maxWidth: .infinity)
 
             Text(object.name)
-                .font(.subheadline)
+                .font(.system(size: 14))
+                .foregroundStyle(Paper.ink)
                 .lineLimit(2, reservesSpace: true)
                 .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .paperCard(radius: 16)
         .contentShape(Rectangle())
         .task(id: object.mainImageData) {
             guard let data = object.mainImageData else { return thumbnail = nil }

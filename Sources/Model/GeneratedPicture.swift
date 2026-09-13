@@ -83,6 +83,21 @@ enum PhotoDesignModel: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What the choice is actually about, on the one screen that offers it.
+    var shortName: String {
+        switch self {
+        case .nanoBanana: return "Fast"
+        case .gptImage: return "Best"
+        }
+    }
+
+    var costNote: String {
+        switch self {
+        case .nanoBanana: return "about 15 seconds,\naround $0.08"
+        case .gptImage: return "about two minutes,\naround $0.15"
+        }
+    }
+
     var summary: String {
         switch self {
         case .nanoBanana: return "$0.08 a picture. Usually ready in about 15 seconds."
@@ -96,25 +111,4 @@ enum PhotoDesignModel: String, CaseIterable, Identifiable {
         case .gptImage: return "GPT-Image is slow: it usually takes about two minutes. Keep this screen open."
         }
     }
-}
-
-/// The box colours the server understands, in its own order.
-enum Marker: String, CaseIterable, Codable {
-    case red, blue, yellow, green, purple, orange, cyan, magenta
-
-    /// Saturated, and far from the scan's off-white walls, oak floor and grey furniture.
-    var rgb: SIMD3<Float> {
-        switch self {
-        case .red:     return SIMD3(0.92, 0.10, 0.10)
-        case .blue:    return SIMD3(0.10, 0.30, 0.95)
-        case .yellow:  return SIMD3(1.00, 0.88, 0.05)
-        case .green:   return SIMD3(0.10, 0.78, 0.20)
-        case .purple:  return SIMD3(0.55, 0.15, 0.80)
-        case .orange:  return SIMD3(1.00, 0.50, 0.00)
-        case .cyan:    return SIMD3(0.00, 0.85, 0.90)
-        case .magenta: return SIMD3(0.95, 0.10, 0.80)
-        }
-    }
-
-    var label: String { rawValue.capitalized }
 }

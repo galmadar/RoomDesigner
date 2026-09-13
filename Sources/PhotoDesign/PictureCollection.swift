@@ -1,63 +1,103 @@
 import SwiftData
 import SwiftUI
 
-/// The room's pictures from "Design with photos", newest first.
-struct PictureCollectionSection: View {
+/// Every picture of one room, newest first.
+struct PictureGalleryView: View {
     let room: ScannedRoom
 
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
-    @State private var opened: GeneratedPicture?
-    @State private var doomed: GeneratedPicture?
+    @State private var opened: RoomPicture?
+    @State private var doomed: RoomPicture?
+
+    private var pictures: [RoomPicture] {
+        room.sortedPictures.map { RoomPicture.made($0) }
+            + room.conceptImages.enumerated().reversed().map { RoomPicture.concept(index: $0, data: $1) }
+    }
 
     var body: some View {
-        let pictures = room.sortedPictures
-        if !pictures.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("^[\(pictures.count) picture](inflect: true) with your products")
-                    .font(.headline)
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
-                                    GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                    ForEach(Array(pictures.enumerated()), id: \.element.persistentModelID) { index, picture in
-                        Button { opened = picture } label: { tile(picture) }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Picture \(index + 1)")
+        NavigationStack {
+            ZStack {
+                Paper.sheet.ignoresSafeArea()
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
+                                        GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        ForEach(pictures) { picture in
+                            Button { opened = picture } label: { tile(picture) }
+                                .buttonStyle(.plain)
+                        }
                     }
+                    .padding(16)
+
+                    Text("Tap a picture to see it full screen, share it or delete it.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Paper.secondaryInk)
+                        .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text("Tap a picture to see it full screen, share it or delete it.")
-                    .font(.caption2).foregroundStyle(.secondary)
             }
-            // Deleted only once the cover is gone: reading a deleted model's properties traps.
-            .fullScreenCover(item: $opened, onDismiss: deleteDoomed) { picture in
-                PictureDetailView(picture: picture) { doomed = picture; opened = nil }
+            .navigationTitle("Pictures")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Paper.sheet, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
             }
+        }
+        // Deleted only once the cover is gone: reading a deleted model's properties traps.
+        .fullScreenCover(item: $opened, onDismiss: deleteDoomed) { picture in
+            PictureDetailView(picture: picture) { doomed = picture; opened = nil }
         }
     }
 
-    private func tile(_ picture: GeneratedPicture) -> some View {
-        Color(.secondarySystemBackground)
-            .aspectRatio(1, contentMode: .fit)
-            .overlay {
-                if let thumbnail = picture.thumbnail {
-                    Image(uiImage: thumbnail).resizable().scaledToFill()
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+    private func tile(_ picture: RoomPicture) -> some View {
+        PictureThumbnail(data: picture.thumbnailData)
+            .aspectRatio(1, contentMode: .fill)
+            .frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     /// A fresh array rather than a removal in place, which SwiftData may not see.
     private func deleteDoomed() {
         guard let doomed else { return }
-        room.pictures = (room.pictures ?? []).filter { $0 !== doomed }
-        context.delete(doomed)
-        try? context.save()
+        switch doomed {
+        case .made(let picture):
+            room.pictures = (room.pictures ?? []).filter { $0 !== picture }
+            context.delete(picture)
+            try? context.save()
+        case .concept(let index, _):
+            var remaining = room.conceptImages
+            if remaining.indices.contains(index) { remaining.remove(at: index) }
+            room.conceptImages = remaining
+        }
         self.doomed = nil
+    }
+}
+
+/// A picture's thumbnail, decoded off the main thread.
+struct PictureThumbnail: View {
+    let data: Data?
+    var maxPixelSize: CGFloat = 500
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        FilledImage(image: image)
+            .task(id: data) {
+                guard let data else { return image = nil }
+                let size = maxPixelSize
+                image = await Task.detached(priority: .userInitiated) {
+                    LibraryImage.thumbnail(from: data, maxPixelSize: size)
+                }.value
+            }
     }
 }
 
 /// One picture full screen, with everything that made it.
 struct PictureDetailView: View {
-    let picture: GeneratedPicture
+    let picture: RoomPicture
     /// Nil where deleting makes no sense, such as straight after making it.
     let onDelete: (() -> Void)?
 
@@ -67,22 +107,26 @@ struct PictureDetailView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Group {
-                        if let image {
-                            Image(uiImage: image).resizable().scaledToFit()
-                        } else {
-                            ProgressView().frame(maxWidth: .infinity, minHeight: 280)
+            ZStack {
+                Paper.sheet.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Group {
+                            if let image {
+                                Image(uiImage: image).resizable().scaledToFit()
+                            } else {
+                                ProgressView().frame(maxWidth: .infinity, minHeight: 280)
+                            }
                         }
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        details
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    details
+                    .padding(16)
                 }
-                .padding()
             }
             .navigationTitle("Picture")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Paper.sheet, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -106,88 +150,73 @@ struct PictureDetailView: View {
                 Text("It will be removed from this room.")
             }
             .task {
-                let data = picture.imageData
+                guard let data = picture.fullData else { return }
                 image = await Task.detached(priority: .userInitiated) { UIImage(data: data) }.value
             }
         }
     }
 
-    private var details: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            detail("What you asked for") { Text(picture.prompt) }
-            detail("Made with") {
-                Text("\(picture.modelName), \(picture.createdAt.formatted(date: .abbreviated, time: .shortened))")
-            }
-            detail("Angle") {
-                HStack(spacing: 10) {
-                    if let data = picture.sourcePhotoData, let photo = UIImage(data: data) {
-                        Image(uiImage: photo).resizable().scaledToFill()
-                            .frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    Text(angleDescription)
+    @ViewBuilder private var details: some View {
+        if case .made(let made) = picture {
+            VStack(alignment: .leading, spacing: 14) {
+                detail("What you asked for") { Text(made.prompt) }
+                detail("Made with") {
+                    Text("\(made.modelName), \(made.createdAt.formatted(date: .abbreviated, time: .shortened))")
                 }
-            }
-            detail("Products") {
-                let products = picture.products
-                if products.isEmpty {
-                    Text("None")
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(products.enumerated()), id: \.offset) { _, product in
-                            HStack(spacing: 8) {
-                                MarkerSwatch(marker: product.marker)
-                                Text(product.name)
-                                Text(product.marker.map { "\($0.rawValue) box" } ?? "not placed")
-                                    .foregroundStyle(.secondary)
+                detail("Angle") {
+                    HStack(spacing: 10) {
+                        if let data = made.sourcePhotoData, let photo = UIImage(data: data) {
+                            FilledImage(image: photo)
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        Text(angleDescription(made))
+                    }
+                }
+                detail("Products") {
+                    let products = made.products
+                    if products.isEmpty {
+                        Text("Nothing new — the room was restyled as it stands.")
+                    } else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(products.enumerated()), id: \.offset) { _, product in
+                                HStack(spacing: 8) {
+                                    MarkerDot(marker: product.marker)
+                                    Text(product.name)
+                                    Text(product.marker.map { "\($0.rawValue) box" } ?? "not placed")
+                                        .foregroundStyle(Paper.secondaryInk)
+                                }
                             }
                         }
                     }
                 }
-            }
-            if let data = picture.scanRenderData, let render = UIImage(data: data) {
-                detail("What the model was shown") {
-                    Image(uiImage: render).resizable().scaledToFit()
-                        .frame(maxHeight: 220)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                if let data = made.scanRenderData, let render = UIImage(data: data) {
+                    detail("What the model was shown") {
+                        Image(uiImage: render).resizable().scaledToFit()
+                            .frame(maxHeight: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
                 }
             }
+            .font(.subheadline)
+            .foregroundStyle(Paper.ink)
+        } else {
+            Text("Made by an earlier version of the app, from the scan alone.")
+                .font(.subheadline)
+                .foregroundStyle(Paper.secondaryInk)
         }
-        .font(.subheadline)
     }
 
-    private var angleDescription: String {
-        let hasPhoto = picture.sourcePhotoData != nil
-        if picture.angle.hasPrefix("Photo") { return "From \(picture.angle.lowercased())" }
-        return hasPhoto ? "Free angle, with a photo taken nearby" : "Free angle, no room photo"
+    private func angleDescription(_ made: GeneratedPicture) -> String {
+        let hasPhoto = made.sourcePhotoData != nil
+        if made.angle.hasPrefix("Photo") { return "From \(made.angle.lowercased())" }
+        return hasPhoto ? "Any angle, with a photo taken nearby" : "Any angle, no room photo"
     }
 
     private func detail<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(title).font(.caption).foregroundStyle(Paper.secondaryInk)
             content()
         }
     }
-}
-
-/// A product's box colour; a dashed outline when it wasn't placed.
-struct MarkerSwatch: View {
-    let marker: Marker?
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 4)
-            .fill(marker?.color ?? .clear)
-            .overlay {
-                if marker == nil {
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(.secondary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-                }
-            }
-            .frame(width: 16, height: 16)
-            .accessibilityHidden(true)
-    }
-}
-
-extension Marker {
-    var color: Color { Color(red: Double(rgb.x), green: Double(rgb.y), blue: Double(rgb.z)) }
 }
