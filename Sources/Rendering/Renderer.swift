@@ -44,58 +44,26 @@ final class Renderer {
               let fragmentFunction = library.makeFunction(name: "room_fragment")
         else { throw Failure.shaderLibraryMissing }
 
-        let vertexDescriptor = MTLVertexDescriptor()
-        vertexDescriptor.attributes[0].format = .float3
-        vertexDescriptor.attributes[0].offset = 0
-        vertexDescriptor.attributes[0].bufferIndex = 0
-        vertexDescriptor.attributes[1].format = .float3
-        vertexDescriptor.attributes[1].offset = MemoryLayout<SIMD3<Float>>.stride
-        vertexDescriptor.attributes[1].bufferIndex = 0
-        vertexDescriptor.attributes[2].format = .float3
-        vertexDescriptor.attributes[2].offset = MemoryLayout<SIMD3<Float>>.stride * 2
-        vertexDescriptor.attributes[2].bufferIndex = 0
-        vertexDescriptor.layouts[0].stride = MemoryLayout<SIMD3<Float>>.stride * 3
-
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = vertexFunction
         descriptor.fragmentFunction = fragmentFunction
-        descriptor.vertexDescriptor = vertexDescriptor
+        descriptor.vertexDescriptor = RoomPipeline.vertexDescriptor
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm      // normals
         descriptor.colorAttachments[1].pixelFormat = .r32Float        // linear depth
         descriptor.colorAttachments[2].pixelFormat = .rgba8Unorm      // the room, shaded
         descriptor.depthAttachmentPixelFormat = .depth32Float
         pipeline = try device.makeRenderPipelineState(descriptor: descriptor)
 
-        let depthDescriptor = MTLDepthStencilDescriptor()
-        depthDescriptor.depthCompareFunction = .less
-        depthDescriptor.isDepthWriteEnabled = true
-        guard let state = device.makeDepthStencilState(descriptor: depthDescriptor) else {
-            throw Failure.noMetalDevice
-        }
+        guard let state = RoomPipeline.depthState(device) else { throw Failure.noMetalDevice }
         depthState = state
     }
 
     func render(_ mesh: Mesh, camera: Camera, size: Int = 768) throws -> Buffers {
         guard !mesh.isEmpty else { throw Failure.emptyMesh }
 
-        // Interleave once; the vertex descriptor above expects position+normal.
-        var vertices: [SIMD3<Float>] = []
-        vertices.reserveCapacity(mesh.positions.count * 3)
-        for index in mesh.positions.indices {
-            vertices.append(mesh.positions[index])
-            vertices.append(index < mesh.normals.count ? mesh.normals[index] : SIMD3(0, 1, 0))
-            vertices.append(index < mesh.colours.count ? mesh.colours[index] : Palette.wall)
+        guard let buffers = RoomPipeline.buffers(for: mesh, device: device) else {
+            throw Failure.emptyMesh
         }
-
-        guard let vertexBuffer = device.makeBuffer(
-                bytes: vertices,
-                length: MemoryLayout<SIMD3<Float>>.stride * vertices.count,
-                options: .storageModeShared),
-              let indexBuffer = device.makeBuffer(
-                bytes: mesh.indices,
-                length: MemoryLayout<UInt32>.stride * mesh.indices.count,
-                options: .storageModeShared)
-        else { throw Failure.emptyMesh }
 
         let normalTexture = makeTexture(format: .rgba8Unorm, size: size)
         let depthTexture = makeTexture(format: .r32Float, size: size)
@@ -124,7 +92,7 @@ final class Renderer {
         pass.depthAttachment.clearDepth = 1.0
 
         let view = camera.view()
-        var uniforms = Uniforms(
+        var uniforms = RoomPipeline.Uniforms(
             modelViewProjection: camera.projection(aspect: 1) * view,
             modelView: view,
             normalMatrix: view
@@ -139,12 +107,13 @@ final class Renderer {
         // Standing inside the room means seeing the far side of every surface,
         // so nothing may be culled.
         encoder.setCullMode(.none)
-        encoder.setVertexBuffer(vertexBuffer, offset: 0, index: 0)
-        encoder.setVertexBytes(&uniforms, length: MemoryLayout<Uniforms>.stride, index: 1)
+        encoder.setVertexBuffer(buffers.vertices, offset: 0, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<RoomPipeline.Uniforms>.stride,
+                               index: 1)
         encoder.drawIndexedPrimitives(type: .triangle,
                                       indexCount: mesh.indices.count,
                                       indexType: .uint32,
-                                      indexBuffer: indexBuffer,
+                                      indexBuffer: buffers.indices,
                                       indexBufferOffset: 0)
         encoder.endEncoding()
         commandBuffer.commit()
@@ -157,12 +126,6 @@ final class Renderer {
     }
 
     // MARK: -
-
-    private struct Uniforms {
-        var modelViewProjection: simd_float4x4
-        var modelView: simd_float4x4
-        var normalMatrix: simd_float4x4
-    }
 
     private func makeTexture(format: MTLPixelFormat, size: Int,
                              readable: Bool = true) -> MTLTexture {

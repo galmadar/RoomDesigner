@@ -42,24 +42,40 @@ struct FragmentOut {
     float4 solid  [[color(2)]];
 };
 
+// Flip on the normal itself rather than on triangle winding. Standing inside a
+// room, winding says nothing useful about which way a wall faces — and getting
+// it wrong leaves every surface unlit, because the light and the camera are the
+// same direction.
+static inline float3 room_facing_normal(float3 normal)
+{
+    float3 facing = normalize(normal);
+    return facing.z < 0.0 ? -facing : facing;
+}
+
+// A headlight, plus enough ambient that walls facing away still read.
+// Deliberately plain: a scan carries no colour or lighting, so anything fancier
+// would be inventing detail rather than showing the room.
+static inline float3 room_shade(float3 normal, float3 tint)
+{
+    float lambert = saturate(dot(normal, float3(0.0, 0.0, 1.0)));
+    float shade   = 0.45 + 0.55 * lambert;
+    return saturate(tint * shade);
+}
+
 fragment FragmentOut room_fragment(VertexOut in [[stage_in]])
 {
-    // Flip on the normal itself rather than on triangle winding. Standing
-    // inside a room, winding says nothing useful about which way a wall faces —
-    // and getting it wrong leaves every surface unlit, because the light and the
-    // camera are the same direction.
-    float3 normal = normalize(in.normal);
-    if (normal.z < 0.0) { normal = -normal; }
+    float3 normal = room_facing_normal(in.normal);
 
     FragmentOut out;
     out.normal = float4(normal * 0.5 + 0.5, 1.0);
     out.depth  = in.viewDepth;
-
-    // A headlight, plus enough ambient that walls facing away still read.
-    // Deliberately plain: a scan carries no colour or lighting, so anything
-    // fancier would be inventing detail rather than showing the room.
-    float lambert = saturate(dot(normal, float3(0.0, 0.0, 1.0)));
-    float shade   = 0.45 + 0.55 * lambert;
-    out.solid = float4(saturate(in.tint * shade), 1.0);
+    out.solid  = float4(room_shade(normal, in.tint), 1.0);
     return out;
+}
+
+/// The same room, the same shading, straight to a drawable: walking through it
+/// should look like the still it is drawn from, not like a second renderer.
+fragment float4 room_walk_fragment(VertexOut in [[stage_in]])
+{
+    return float4(room_shade(room_facing_normal(in.normal), in.tint), 1.0);
 }
