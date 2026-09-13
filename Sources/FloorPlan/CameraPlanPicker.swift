@@ -34,6 +34,12 @@ struct CameraPlanPicker: View {
     }
     var links: [Proposal.ID: ProductLink] = [:]
 
+    /// What the plan is drawn on, so it can sit on the app's paper rather than a system grey.
+    var canvas: Color = Color(.secondarySystemBackground)
+
+    /// Off where there is no viewpoint to set, so the plan is only the furniture.
+    var showsCamera = true
+
     /// Where each photo was taken, in the room's photo order; nil where the pose can't be read.
     var photoSpots: [PlanSpot?] = []
     /// The photo the camera stands at, if it hasn't moved since.
@@ -69,7 +75,9 @@ struct CameraPlanPicker: View {
                 FloorPlanView.draw(plan, in: context, using: projection, labels: true)
                 drawPhotoSpots(in: context, using: projection, dimmed: mode == .furniture)
                 drawProposals(in: context, using: projection)
-                drawCamera(in: context, using: projection, dimmed: mode == .furniture)
+                if showsCamera {
+                    drawCamera(in: context, using: projection, dimmed: mode == .furniture)
+                }
             }
             .contentShape(Rectangle())
             .gesture(
@@ -119,7 +127,7 @@ struct CameraPlanPicker: View {
                 }
             }
         }
-        .background(Color(.secondarySystemBackground))
+        .background(canvas)
     }
 
     // MARK: - Interaction

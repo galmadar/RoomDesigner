@@ -1,693 +1,321 @@
-import RoomPlan
 import SwiftData
 import SwiftUI
-import simd
 
+/// One room: the newest picture of it, the photos it was scanned with, and the
+/// one thing worth doing next.
 struct RoomDetailView: View {
     @Bindable var room: ScannedRoom
 
-    @StateObject private var previews = PreviewRenderer()
-    @State private var isDragging = false
-    @State private var cameraPosition: SIMD2<Float> = .zero
-    @State private var yaw: Float = 0
-    @State private var fieldOfView: Float = 65 * .pi / 180
-    @State private var pitch: Float = 0
-    @State private var eyeHeight: Float = 1.5
-    @State private var conditioning: ConditioningImages.Kind = .room
-    @State private var brief = ""
-    @State private var strength: Double = 1.0
-    @State private var isGenerating = false
-    @State private var failure: String?
-    @State private var enlarged: UIImage?
-    @State private var mode: CameraPlanPicker.Mode = .camera
-    @State private var selection: Proposal.ID?
-    @State private var undoStack: [[Proposal]] = []
-    @State private var redoStack: [[Proposal]] = []
-    @State private var isNamingArrangement = false
-    @State private var arrangementName = ""
-    @State private var snap: PhotoSnap?
-    @State private var photoPreview: UIImage?
-    @State private var isPickingProduct = false
-    @State private var isDesigningWithPhotos = false
-    @Query(sort: \LibraryObject.createdAt, order: .reverse) private var library: [LibraryObject]
-    @StateObject private var productThumbnails = ProductThumbnails()
+    @ObservedObject private var accents = RoomAccents.shared
 
-    /// How many of the stored images came from the run that just finished, so
-    /// that set can be shown together. View state, not stored: it only matters
-    /// while you are looking at the designs you just asked for.
-    @State private var latestCount = 0
+    @State private var heroImage: UIImage?
+    @State private var opened: RoomPicture?
+    @State private var isShowingGallery = false
+    @State private var isShowingPhotos = false
+    @State private var isDesigning = false
+    @State private var isLayingOut = false
+
+    private var accent: Color { accents.accent(for: room) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                if let captured = room.capturedRoom {
-                    results
-                    PictureCollectionSection(room: room)
-                    ScanPhotosSection(room: room)
-                    viewpoint(FloorPlan(room: captured))
-                    framing
-                    designBrief
-                } else {
-                    ContentUnavailableView("Nothing scanned", systemImage: "questionmark")
-                }
+        ZStack {
+            Paper.sheet.ignoresSafeArea()
+            if room.capturedRoom == nil {
+                unscanned
+            } else {
+                content
             }
-            .padding()
         }
         .navigationTitle(room.name)
         .navigationBarTitleDisplayMode(.inline)
-        .alert("Couldn't generate", isPresented: .constant(failure != nil)) {
-            Button("OK") { failure = nil }
-        } message: { Text(failure ?? "") }
-        .alert("Keep this arrangement", isPresented: $isNamingArrangement) {
-            TextField("Name", text: $arrangementName)
-            Button("Keep") { keepArrangement() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Saves the furniture as it stands now, so you can come back to it after trying something else.")
-        }
-        .fullScreenCover(item: $enlarged) { image in
-            ZStack {
-                Color.black.ignoresSafeArea()
-                Image(uiImage: image).resizable().scaledToFit()
-            }
-            .onTapGesture { enlarged = nil }
-        }
-        .task { prepare() }
-        .task(id: library.map(\.id)) { await productThumbnails.load(library) }
-        .task(id: photoPreviewKey) { await renderPhotoPreview() }
-        .sheet(isPresented: $isPickingProduct) {
-            LibraryPicker(title: "Add from library",
-                          footnote: "It lands in front of the camera at its kind's usual size. Things with no floor shape, like a painting, can go in without placing on the Design with photos screen.",
-                          unavailable: { $0.furnitureKind == nil ? "No floor shape. Set its kind in the Library to place it." : nil },
-                          onPick: { add($0) })
-        }
-        .navigationDestination(isPresented: $isDesigningWithPhotos) {
-            if let freeCamera {
-                PhotoDesignView(room: room, freeCamera: freeCamera, startingPhoto: activePhoto)
+        .toolbarBackground(Paper.sheet, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { isShowingGallery = true } label: {
+                        Label("All pictures", systemImage: "square.grid.2x2")
+                    }
+                    .disabled(pictures.isEmpty)
+                    Button { isShowingPhotos = true } label: {
+                        Label("Photos of the room", systemImage: "camera")
+                    }
+                    .disabled(room.sortedPhotos.isEmpty)
+                } label: {
+                    Image(systemName: "ellipsis").foregroundStyle(Paper.ink)
+                }
             }
         }
-        .onChange(of: cameraPosition) { render() }
-        .onChange(of: yaw) { render() }
-        .onChange(of: conditioning) { render() }
-        .onChange(of: fieldOfView) { render() }
-        .onChange(of: pitch) { render() }
-        .onChange(of: eyeHeight) { render() }
-        .onChange(of: room.proposalsData) { rebuild() }
-        .onChange(of: isDragging) { if !isDragging { render() } }   // sharpen on release
-    }
-
-    private func viewpoint(_ plan: FloorPlan) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Mode", selection: $mode) {
-                Text("Camera").tag(CameraPlanPicker.Mode.camera)
-                Text("Furniture").tag(CameraPlanPicker.Mode.furniture)
-            }
-            .pickerStyle(.segmented)
-
-            Text(mode == .camera
-                 ? "Drag the dot to move. Drag the small circle to turn. Pinch to zoom, double-tap to fit."
-                    + ((room.photos ?? []).isEmpty ? "" : " Tap a numbered square to see exactly what that photo saw.")
-                 : "Add a piece below, then drag it into place. The thick edge is its front. Pinch to zoom.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            CameraPlanPicker(plan: plan, mode: mode, position: $cameraPosition,
-                             yaw: $yaw, isDragging: $isDragging,
-                             fieldOfView: $fieldOfView,
-                             proposals: proposalsBinding, selection: $selection,
-                             onBeginEdit: { checkpoint() },
-                             links: planLinks,
-                             photoSpots: room.sortedPhotos.map(\.planSpot),
-                             activeSpot: activePhoto,
-                             onPickSpot: { snapToPhoto($0) })
-                .frame(height: 320)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-
-            if mode == .camera { lens } else { furniture }
+        .tint(accent)
+        .environment(\.roomAccent, accent)
+        .task { await accents.load(room) }
+        .task(id: hero?.id) { await loadHero() }
+        .fullScreenCover(item: $opened) { picture in
+            PictureDetailView(picture: picture, onDelete: { delete(picture) })
+        }
+        .fullScreenCover(isPresented: $isShowingGallery) {
+            PictureGalleryView(room: room)
+        }
+        .fullScreenCover(isPresented: $isShowingPhotos) {
+            ScanPhotosView(room: room)
+        }
+        .fullScreenCover(isPresented: $isDesigning) {
+            DesignFlowView(room: room)
+        }
+        .navigationDestination(isPresented: $isLayingOut) {
+            LayoutView(room: room)
         }
     }
 
-    private var lens: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.left.and.right.square")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Slider(value: Binding(get: { Double(fieldOfView) },
-                                          set: { fieldOfView = Float($0) }),
-                           in: Double(30 * Float.pi / 180)...Double(110 * Float.pi / 180))
-                    Text("Lens \(Int(fieldOfView * 180 / .pi))° — \(lensDescription)")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
+    private var content: some View {
+        VStack(spacing: 0) {
+            hero.map { heroCard($0) } ?? AnyView(emptyHero)
+            photoStrip
+            counts
+            Spacer(minLength: 12)
+            actions
+        }
+    }
 
-            HStack(spacing: 12) {
-                Image(systemName: "figure.stand").foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Slider(value: Binding(get: { Double(eyeHeight) },
-                                          set: { eyeHeight = Float($0) }),
-                           in: 0.4...2.2)
-                    Text("Eye height \(eyeHeight, format: .number.precision(.fractionLength(2))) m — \(heightDescription)")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
+    private var unscanned: some View {
+        ContentUnavailableView {
+            Label("Nothing scanned", systemImage: "questionmark")
+        } description: {
+            Text("This room has no scan, so there is nothing to design from.")
+        }
+    }
 
-            HStack(spacing: 12) {
-                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
-                    .foregroundStyle(.secondary)
-                Button { dolly(-0.35) } label: {
-                    Label("Back", systemImage: "minus.magnifyingglass")
+    // MARK: - The newest picture
+
+    /// Newest first, with the pictures the retired one-shot flow left behind
+    /// after them, so an old room still shows what it has.
+    private var pictures: [RoomPicture] {
+        room.sortedPictures.map { RoomPicture.made($0) }
+            + room.conceptImages.enumerated().reversed().map { RoomPicture.concept(index: $0, data: $1) }
+    }
+
+    private var hero: RoomPicture? { pictures.first }
+
+    private func heroCard(_ picture: RoomPicture) -> AnyView {
+        AnyView(
+            Button { opened = picture } label: {
+                ZStack(alignment: .bottomLeading) {
+                    FilledImage(image: heroImage)
+                        .frame(height: 430)
                         .frame(maxWidth: .infinity)
-                }
-                Button { dolly(0.35) } label: {
-                    Label("Closer", systemImage: "plus.magnifyingglass")
+
+                    LinearGradient(colors: [Color(red: 0.11, green: 0.098, blue: 0.09).opacity(0.72),
+                                            .clear],
+                                   startPoint: .bottom, endPoint: .top)
+                        .frame(height: 130)
                         .frame(maxWidth: .infinity)
-                }
-            }
-            .buttonStyle(.bordered)
-            .labelStyle(.titleAndIcon)
-        }
-    }
 
-    // MARK: - Furniture
-
-    /// Always writes the whole array back: SwiftData does not reliably observe
-    /// an in-place mutation of a stored collection.
-    private var proposalsBinding: Binding<[Proposal]> {
-        Binding(get: { room.proposals }, set: { room.proposals = $0 })
-    }
-
-    private var selectedProposal: Proposal? {
-        room.proposals.first { $0.id == selection }
-    }
-
-    private var furniture: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    Button { isPickingProduct = true } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: "square.grid.2x2").font(.system(size: 17))
-                            Text("Library").font(.caption2)
-                        }
-                        .frame(width: 62, height: 52)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityLabel("Add from library")
-
-                    ForEach(Furniture.Kind.allCases) { kind in
-                        Button { add(kind) } label: {
-                            VStack(spacing: 3) {
-                                Image(systemName: kind.symbol).font(.system(size: 17))
-                                Text(kind.label).font(.caption2)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(picture.prompt)
+                            .font(.system(size: 20, weight: .semibold))
+                            .tracking(-0.4)
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        HStack(spacing: 8) {
+                            ForEach(Array(picture.markers.enumerated()), id: \.offset) { _, marker in
+                                MarkerDot(marker: marker, size: 9)
                             }
-                            .frame(width: 62, height: 52)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                }
-                .padding(.horizontal, 1)
-            }
-
-            if let selected = selectedProposal, let link = planLinks[selected.id] {
-                HStack(spacing: 8) {
-                    ProductThumbnail(image: link.thumbnail, size: 32)
-                    Text(link.name).font(.caption).lineLimit(1)
-                    Spacer()
-                    MarkerSwatch(marker: link.marker)
-                    Text(link.marker.map { "\($0.label) box" } ?? "Left out: 8 products at most")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
-            }
-
-            if let selected = selectedProposal {
-                HStack(spacing: 8) {
-                    Button { turn(selected, by: -.pi / 12) } label: {
-                        Image(systemName: "rotate.left")
-                    }
-                    Button { turn(selected, by: .pi / 12) } label: {
-                        Image(systemName: "rotate.right")
-                    }
-                    Button { resize(selected, by: 0.9) } label: {
-                        Image(systemName: "minus.magnifyingglass")
-                    }
-                    Button { resize(selected, by: 1.1) } label: {
-                        Image(systemName: "plus.magnifyingglass")
-                    }
-                    Spacer()
-                    Text(dimensions(of: selected)).font(.caption2).monospacedDigit()
-                        .foregroundStyle(.secondary)
-                    Button(role: .destructive) { remove(selected) } label: {
-                        Image(systemName: "trash")
-                    }
-                }
-                .buttonStyle(.bordered)
-            } else if !room.proposals.isEmpty {
-                Text("Tap a piece on the plan to turn, resize or remove it.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-
-            history
-            saved
-        }
-    }
-
-    private var history: some View {
-        HStack(spacing: 8) {
-            Button { undo() } label: { Label("Undo", systemImage: "arrow.uturn.backward") }
-                .disabled(undoStack.isEmpty)
-            Button { redo() } label: { Label("Redo", systemImage: "arrow.uturn.forward") }
-                .disabled(redoStack.isEmpty)
-            Spacer()
-            Button { arrangementName = suggestedName; isNamingArrangement = true } label: {
-                Label("Keep", systemImage: "bookmark")
-            }
-            .disabled(room.proposals.isEmpty)
-            Button(role: .destructive) { clearAll() } label: {
-                Label("Clear", systemImage: "trash")
-            }
-            .disabled(room.proposals.isEmpty)
-        }
-        .buttonStyle(.bordered)
-        .labelStyle(.iconOnly)
-        .font(.body)
-    }
-
-    @ViewBuilder private var saved: some View {
-        if !room.arrangements.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Kept arrangements").font(.caption).foregroundStyle(.secondary)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(room.arrangements) { arrangement in
-                            Button { restore(arrangement) } label: {
-                                VStack(spacing: 2) {
-                                    Text(arrangement.name).font(.caption)
-                                    Text("^[\(arrangement.proposals.count) piece](inflect: true)")
-                                        .font(.caption2).foregroundStyle(.secondary)
-                                }
-                                .padding(.horizontal, 10).padding(.vertical, 6)
-                            }
-                            .buttonStyle(.bordered)
-                            .contextMenu {
-                                Button(role: .destructive) { forget(arrangement) } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
+                            Text(picture.caption)
+                                .font(.system(size: 13))
+                                .foregroundStyle(.white.opacity(0.85))
                         }
                     }
-                    .padding(.horizontal, 1)
+                    .padding(.leading, 16)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 14)
                 }
-                Text("Tap to restore. Long-press to delete.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                .frame(height: 430)
+                .frame(maxWidth: .infinity)
+                .clipped()
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Newest picture. \(picture.prompt)")
+        )
+    }
+
+    private var emptyHero: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(Paper.mutedInk)
+            Text("No pictures yet")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(Paper.ink)
+            Text("Design makes one from a photo of this room.")
+                .font(.system(size: 14))
+                .foregroundStyle(Paper.secondaryInk)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 430)
+        .background(Paper.tint)
+    }
+
+    private func loadHero() async {
+        guard let data = hero?.fullData else { return heroImage = nil }
+        heroImage = await Task.detached(priority: .userInitiated) {
+            LibraryImage.thumbnail(from: data, maxPixelSize: 1400)
+        }.value
+    }
+
+    private func delete(_ picture: RoomPicture) {
+        opened = nil
+        switch picture {
+        case .made(let made):
+            room.pictures = (room.pictures ?? []).filter { $0 !== made }
+            RoomPicture.modelContext(of: made)?.delete(made)
+        case .concept(let index, _):
+            // A fresh array, never a removal in place: SwiftData may not see one.
+            var remaining = room.conceptImages
+            guard remaining.indices.contains(index) else { return }
+            remaining.remove(at: index)
+            room.conceptImages = remaining
         }
     }
 
-    // MARK: - History
+    // MARK: - Photos of the real room
 
-    private var suggestedName: String { "Layout \(room.arrangements.count + 1)" }
-
-    /// Snapshot the arrangement *before* it changes. Called at the start of a
-    /// drag rather than during it, so one gesture is one undo step.
-    private func checkpoint() {
-        undoStack.append(room.proposals)
-        if undoStack.count > 40 { undoStack.removeFirst() }
-        redoStack.removeAll()
-    }
-
-    private func undo() {
-        guard let previous = undoStack.popLast() else { return }
-        redoStack.append(room.proposals)
-        apply(previous)
-    }
-
-    private func redo() {
-        guard let next = redoStack.popLast() else { return }
-        undoStack.append(room.proposals)
-        apply(next)
-    }
-
-    private func apply(_ proposals: [Proposal]) {
-        room.proposals = proposals
-        if let selection, !proposals.contains(where: { $0.id == selection }) {
-            self.selection = nil
-        }
-        rebuild()
-    }
-
-    private func clearAll() {
-        checkpoint()
-        room.proposals = []
-        selection = nil
-        rebuild()
-    }
-
-    private func keepArrangement() {
-        let name = arrangementName.trimmingCharacters(in: .whitespaces)
-        room.arrangements = room.arrangements
-            + [Arrangement(name: name.isEmpty ? suggestedName : name,
-                           proposals: room.proposals)]
-    }
-
-    private func restore(_ arrangement: Arrangement) {
-        checkpoint()
-        apply(arrangement.proposals)
-    }
-
-    private func forget(_ arrangement: Arrangement) {
-        room.arrangements = room.arrangements.filter { $0.id != arrangement.id }
-    }
-
-    private func dimensions(of proposal: Proposal) -> String {
-        String(format: "%.2f × %.2f m", proposal.size.x, proposal.size.z)
-    }
-
-    /// New pieces land in front of the camera rather than at the origin, so they
-    /// arrive already in shot.
-    private func add(_ kind: Furniture.Kind, linking product: UUID? = nil) {
-        guard let bounds = previews.bounds else { return }
-        let ahead = cameraPosition + SIMD2(sin(yaw), -cos(yaw)) * 2.0
-        checkpoint()
-        var proposal = Proposal(kind: kind, position: Camera.clamp(ahead, in: bounds))
-        proposal.rotation = yaw + .pi        // facing back towards the camera
-        proposal.libraryObjectID = product
-        room.proposals = room.proposals + [proposal]
-        selection = proposal.id
-        render()
-    }
-
-    private func add(_ object: LibraryObject) {
-        guard let kind = object.furnitureKind else { return }
-        add(kind, linking: object.id)
-    }
-
-    private var planLinks: [Proposal.ID: CameraPlanPicker.ProductLink] {
-        Dictionary(PhotoDesignScene.placedProducts(room.proposals, library: library).map {
-            ($0.id, CameraPlanPicker.ProductLink(name: $0.object.name,
-                                                 thumbnail: productThumbnails.images[$0.object.id],
-                                                 marker: $0.marker))
-        }, uniquingKeysWith: { first, _ in first })
-    }
-
-    private func turn(_ proposal: Proposal, by angle: Float) {
-        mutate(proposal) { $0.rotation += angle }
-    }
-
-    private func resize(_ proposal: Proposal, by factor: Float) {
-        mutate(proposal) { $0.size = simd_clamp($0.size * factor,
-                                                SIMD3(repeating: 0.1),
-                                                SIMD3(repeating: 4.0)) }
-    }
-
-    private func remove(_ proposal: Proposal) {
-        checkpoint()
-        room.proposals = room.proposals.filter { $0.id != proposal.id }
-        selection = nil
-        render()
-    }
-
-    private func mutate(_ proposal: Proposal, _ change: (inout Proposal) -> Void) {
-        checkpoint()
-        guard let index = room.proposals.firstIndex(where: { $0.id == proposal.id })
-        else { return }
-        var updated = room.proposals
-        change(&updated[index])
-        room.proposals = updated
-        render()
-    }
-
-    private var heightDescription: String {
-        if eyeHeight < 0.8 { return "low, like sitting on the floor" }
-        if eyeHeight < 1.3 { return "seated" }
-        if eyeHeight < 1.8 { return "standing" }
-        return "high, looking down into the room"
-    }
-
-    private var lensDescription: String {
-        let degrees = fieldOfView * 180 / .pi
-        if degrees < 45 { return "tight, picks out one corner" }
-        if degrees < 75 { return "natural, like your eyes" }
-        return "wide, makes the room feel bigger"
-    }
-
-    /// Steps along the way the camera is facing, so Back and Closer mean what
-    /// you are looking at, not a compass direction.
-    private func dolly(_ metres: Float) {
-        guard let bounds = previews.bounds else { return }
-        let heading = SIMD2(sin(yaw), -cos(yaw))
-        cameraPosition = Camera.clamp(cameraPosition + heading * metres, in: bounds)
-    }
-
-    private var framing: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ViewfinderView(image: activePhoto == nil ? previews.image : (photoPreview ?? previews.image),
-                           yaw: $yaw, pitch: $pitch, isDragging: $isDragging)
-
-            if let index = activePhoto {
-                Text("Standing where photo \(index + 1) was taken, seeing exactly what it saw. Move or turn to look around freely.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-
-            Picker("Conditioning", selection: $conditioning) {
-                ForEach(ConditioningImages.Kind.allCases) {
-                    Text($0.label).tag($0)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            if !conditioning.isConditioning {
-                Text("The room as scanned — grey is what RoomPlan found, green is what you added. Designing from here uses the depth view.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private var designBrief: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("The redesign").font(.headline)
-            TextField("Scandinavian bedroom, oak floor, morning light",
-                      text: $brief, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(2...4)
-
-            SuggestionIdeas(text: $brief, room: room)
-
-            HStack {
-                Text("Hold the room").font(.caption)
-                Slider(value: $strength, in: 0.2...1.0)
-                Text(String(format: "%.1f", strength)).monospacedDigit().frame(width: 32)
-            }
-
-            Button {
-                Task { await generate() }
-            } label: {
-                if isGenerating {
-                    HStack { ProgressView(); Text("Designing…") }.frame(maxWidth: .infinity)
-                } else {
-                    Text("Design this room").frame(maxWidth: .infinity)
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(brief.isEmpty || previews.image == nil || isGenerating)
-
-            Button { isDesigningWithPhotos = true } label: {
-                Label("Design with photos", systemImage: "photo.on.rectangle.angled")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .disabled(previews.bounds == nil)
-
-            Text("A photo of your real room with products from your library in it.")
-                .font(.caption2).foregroundStyle(.secondary)
-        }
-    }
-
-    // MARK: - Photo spots
-
-    /// The free camera's values at the moment it jumped to a photo. While they still
-    /// match, the preview is that photo's exact camera; any nudge makes it free again.
-    private struct PhotoSnap: Equatable {
-        var index: Int
-        var position: SIMD2<Float>
-        var yaw: Float
-        var pitch: Float
-        var eyeHeight: Float
-        var fieldOfView: Float
-    }
-
-    private var activePhoto: Int? {
-        guard let snap else { return nil }
-        let now = PhotoSnap(index: snap.index, position: cameraPosition, yaw: yaw, pitch: pitch,
-                            eyeHeight: eyeHeight, fieldOfView: fieldOfView)
-        return now == snap ? snap.index : nil
-    }
-
-    /// The free controls get the nearest values they can hold; the preview uses the photo's own camera.
-    private func snapToPhoto(_ index: Int) {
+    private var photoStrip: some View {
         let photos = room.sortedPhotos
-        guard photos.indices.contains(index), let spot = photos[index].planSpot,
-              let bounds = previews.bounds else { return }
-        cameraPosition = Camera.clamp(spot.position, in: bounds)
-        yaw = spot.yaw
-        pitch = min(max(spot.pitch, -40 * .pi / 180), 40 * .pi / 180)
-        eyeHeight = min(max(spot.height - bounds.min.y, 0.4), 2.2)
-        fieldOfView = min(max(spot.fieldOfView, 30 * .pi / 180), 110 * .pi / 180)
-        snap = PhotoSnap(index: index, position: cameraPosition, yaw: yaw, pitch: pitch,
-                         eyeHeight: eyeHeight, fieldOfView: fieldOfView)
-    }
-
-    private struct PhotoPreviewKey: Equatable {
-        var photo: Int?
-        var kind: ConditioningImages.Kind
-        var proposals: Data?
-    }
-
-    private var photoPreviewKey: PhotoPreviewKey {
-        PhotoPreviewKey(photo: activePhoto, kind: conditioning, proposals: room.proposalsData)
-    }
-
-    private func renderPhotoPreview() async {
-        let photos = room.sortedPhotos
-        guard let index = activePhoto, photos.indices.contains(index),
-              let viewpoint = photos[index].viewpoint, let captured = room.capturedRoom
-        else { return photoPreview = nil }
-        let mesh = RoomGeometry.build(from: captured, proposals: room.proposals)
-        let image = await ShotRenderer.shared.image(of: mesh, shot: PhotoDesignScene.shot(for: viewpoint),
-                                                    size: PreviewRenderer.finalSize, kind: conditioning)
-        if !Task.isCancelled { photoPreview = image }
-    }
-
-    /// The free camera exactly as the preview draws it.
-    private var freeCamera: Camera? {
-        previews.bounds.map {
-            Camera.standing(at: cameraPosition, in: $0, eyeHeight: eyeHeight, yaw: yaw,
-                            pitch: pitch, fieldOfView: fieldOfView)
-        }
-    }
-
-    // MARK: - Results
-
-    private struct Concept: Identifiable {
-        let id: Int
-        let image: UIImage
-    }
-
-    /// Newest first, so the run you just asked for is the first thing on screen.
-    private var concepts: [Concept] {
-        Array(room.conceptImages.enumerated().compactMap { index, data in
-            UIImage(data: data).map { Concept(id: index, image: $0) }
-        }.reversed())
-    }
-
-    private func grid(_ concepts: [Concept]) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
-                            GridItem(.flexible(), spacing: 10)], spacing: 10) {
-            ForEach(concepts) { concept in
-                Image(uiImage: concept.image)
-                    .resizable().scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .onTapGesture { enlarged = concept.image }
-            }
-        }
-    }
-
-    @ViewBuilder private var results: some View {
-        if !room.conceptImages.isEmpty {
-            let all = concepts
-            let newest = Array(all.prefix(latestCount))
-            let earlier = Array(all.dropFirst(latestCount))
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("^[\(room.conceptImages.count) design](inflect: true)")
-                    .font(.headline)
-
-                if !newest.isEmpty { grid(newest) }
-                if !earlier.isEmpty {
-                    if !newest.isEmpty {
-                        Text("Earlier").font(.caption).foregroundStyle(.secondary)
+        return HStack(spacing: 10) {
+            if let first = photos.first {
+                photoTile(first)
+                if photos.count > 1 {
+                    Button { isShowingPhotos = true } label: {
+                        Text("+\(photos.count - 1) more")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Paper.mutedInk)
+                            .frame(width: 108, height: 84)
+                            .background(Paper.deepTint,
+                                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-                    grid(earlier)
+                    .buttonStyle(.plain)
                 }
-
-                Text("Tap a design to see it full screen.")
-                    .font(.caption2).foregroundStyle(.secondary)
             }
-        }
-    }
-
-    private func prepare() {
-        guard previews.bounds == nil, let captured = room.capturedRoom else { return }
-        let built = RoomGeometry.build(from: captured, proposals: room.proposals)
-        previews.load(built)
-
-        // Open on a shot worth looking at. Standing in the middle facing dead
-        // level puts a blank wall in the frame; from a corner, angled slightly
-        // down, you see the floor, the far corner and whatever is in between —
-        // which is how a room actually gets photographed.
-        let bounds = built.bounds
-        let centre = Camera.centre(of: bounds)
-        let corner = SIMD2(bounds.min.x + (bounds.max.x - bounds.min.x) * 0.18,
-                           bounds.min.z + (bounds.max.z - bounds.min.z) * 0.18)
-        cameraPosition = Camera.clamp(corner, in: bounds)
-        let toCentre = centre - cameraPosition
-        yaw = atan2(toCentre.x, -toCentre.y)
-        pitch = -8 * .pi / 180
-        render()
-    }
-
-    private func rebuild() {
-        guard let captured = room.capturedRoom else { return }
-        previews.load(RoomGeometry.build(from: captured, proposals: room.proposals))
-        render()
-    }
-
-    private func render() {
-        previews.request(position: cameraPosition, yaw: yaw, pitch: pitch,
-                         eyeHeight: eyeHeight, fieldOfView: fieldOfView,
-                         kind: conditioning, draft: isDragging)
-    }
-
-    private func generate() async {
-        isGenerating = true
-        defer { isGenerating = false }
-
-        // The solid view shows what was scanned; it is not something to condition
-        // on, since its colours are invented. Fall back to depth.
-        let kind: ConditioningImages.Kind = conditioning.isConditioning ? conditioning : .depth
-        guard let conditioningImage = await previews.snapshot(
-            position: cameraPosition, yaw: yaw, pitch: pitch, eyeHeight: eyeHeight,
-            fieldOfView: fieldOfView, kind: kind)
-        else {
-            failure = "The viewpoint could not be rendered."
-            return
-        }
-
-        do {
-            let images = try await PlanService().generate(
-                from: conditioningImage,
-                brief: .init(prompt: brief, strength: Float(strength), conditioning: kind)
-            )
-            let encoded = images.compactMap { $0.pngData() }
-            guard !encoded.isEmpty else {
-                failure = "The design came back but the pictures could not be read."
-                return
+            Button { isShowingPhotos = true } label: {
+                VStack(spacing: 5) {
+                    Image(systemName: "camera").font(.system(size: 19, weight: .light))
+                    Text(photos.isEmpty ? "No photos" : "Photos").font(.system(size: 12))
+                }
+                .foregroundStyle(Paper.mutedInk)
+                .frame(maxWidth: .infinity)
+                .frame(height: 84)
+                .background(Paper.tint,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
-            room.brief = brief
-            latestCount = encoded.count
-            // A fresh array, never append: SwiftData does not observe an
-            // in-place mutation of a stored collection.
-            room.conceptImages = room.conceptImages + encoded
-        } catch {
-            failure = error.localizedDescription
+            .buttonStyle(.plain)
+            .disabled(photos.isEmpty)
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+    }
+
+    private func photoTile(_ photo: ScanPhoto) -> some View {
+        Button { isShowingPhotos = true } label: {
+            FilledImage(image: photo.thumbnail)
+                .frame(width: 108, height: 84)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Photos of the room")
+    }
+
+    private var counts: some View {
+        Button { if !pictures.isEmpty { isShowingGallery = true } } label: {
+            Text(countsText)
+                .font(.system(size: 13))
+                .foregroundStyle(Paper.secondaryInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+    }
+
+    private var countsText: String {
+        let photos = room.sortedPhotos.count
+        let made = pictures.count
+        let left = made == 1 ? "1 picture" : "\(made) pictures"
+        let right = photos == 1 ? "1 photo of the real room" : "\(photos) photos of the real room"
+        return "\(left) · \(right)"
+    }
+
+    // MARK: - The one action
+
+    private var actions: some View {
+        VStack(spacing: 10) {
+            Button { isDesigning = true } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "sparkles").font(.system(size: 18, weight: .semibold))
+                    Text("Design")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+
+            Button("Layout") { isLayingOut = true }
+                .buttonStyle(QuietButtonStyle())
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 28)
     }
 }
 
+/// A picture of this room, however it was made.
+enum RoomPicture: Identifiable {
+    case made(GeneratedPicture)
+    /// From the retired one-shot flow, kept so old rooms still show their work.
+    case concept(index: Int, data: Data)
 
-/// So a tapped concept can drive `fullScreenCover(item:)`.
-extension UIImage: @retroactive Identifiable {
-    public var id: Int { hashValue }
+    var id: String {
+        switch self {
+        case .made(let picture): return "made-\(picture.persistentModelID.hashValue)"
+        case .concept(let index, _): return "concept-\(index)"
+        }
+    }
+
+    var prompt: String {
+        switch self {
+        case .made(let picture): return picture.prompt
+        case .concept: return "An earlier design of this room"
+        }
+    }
+
+    var markers: [Marker] {
+        guard case .made(let picture) = self else { return [] }
+        return picture.products.compactMap(\.marker)
+    }
+
+    var caption: String {
+        switch self {
+        case .made(let picture):
+            let count = picture.products.count
+            let products = count == 0 ? "Just the room" : (count == 1 ? "1 product" : "\(count) products")
+            return "\(products) · from \(picture.angle.lowercased())"
+        case .concept:
+            return "From the scan"
+        }
+    }
+
+    var fullData: Data? {
+        switch self {
+        case .made(let picture): return picture.imageData
+        case .concept(_, let data): return data
+        }
+    }
+
+    var thumbnailData: Data? {
+        switch self {
+        case .made(let picture): return picture.thumbnailData ?? picture.imageData
+        case .concept(_, let data): return data
+        }
+    }
+
+    static func modelContext(of picture: GeneratedPicture) -> ModelContext? {
+        picture.modelContext
+    }
 }

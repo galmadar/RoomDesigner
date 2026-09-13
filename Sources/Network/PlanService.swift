@@ -6,20 +6,11 @@ import UIKit
 /// choice can change without shipping a new build.
 struct PlanService {
 
-    struct Brief {
-        var prompt: String
-        var strength: Float = 1.0
-        var conditioning: ConditioningImages.Kind = .depth
-    }
-
     enum Failure: LocalizedError {
-        case badImage
         case server(status: Int, body: String)
 
         var errorDescription: String? {
             switch self {
-            case .badImage:
-                return "The rendered image could not be encoded."
             case .server(let status, let body):
                 return "The server returned \(status). \(body)"
             }
@@ -45,18 +36,6 @@ struct PlanService {
     /// Where requests actually go. Non-optional: there is always somewhere to ask.
     static var baseURL: URL { baseURLOverride ?? defaultBaseURL }
 
-    private struct Request: Encodable {
-        let prompt: String
-        let strength: Float
-        let conditioning: String
-        let count: Int
-        let image: String            // base64 PNG
-    }
-
-    private struct Response: Decodable {
-        let images: [String]         // URLs
-    }
-
     private struct SuggestionRequest: Encodable {
         let room: RoomFacts
         let count: Int
@@ -64,47 +43,6 @@ struct PlanService {
 
     private struct SuggestionResponse: Decodable {
         let suggestions: [String]
-    }
-
-    /// Two at a time: still a comparison, without paying four times over for Flux.
-    static let conceptsPerRun = 2
-
-    func generate(from image: UIImage, brief: Brief,
-                  count: Int = conceptsPerRun) async throws -> [UIImage] {
-        guard let png = image.pngData() else { throw Failure.badImage }
-
-        var request = URLRequest(url: Self.baseURL.appendingPathComponent("generate"))
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 180        // generation routinely takes a minute
-        request.httpBody = try JSONEncoder().encode(
-            Request(prompt: brief.prompt,
-                    strength: brief.strength,
-                    conditioning: brief.conditioning.rawValue,
-                    count: count,
-                    image: png.base64EncodedString())
-        )
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(status) else {
-            throw Failure.server(status: status,
-                                 body: String(data: data, encoding: .utf8) ?? "")
-        }
-
-        let decoded = try JSONDecoder().decode(Response.self, from: data)
-        return try await withThrowingTaskGroup(of: UIImage?.self) { group in
-            for urlString in decoded.images {
-                guard let url = URL(string: urlString) else { continue }
-                group.addTask {
-                    let (bytes, _) = try await URLSession.shared.data(from: url)
-                    return UIImage(data: bytes)
-                }
-            }
-            var images: [UIImage] = []
-            for try await image in group { if let image { images.append(image) } }
-            return images
-        }
     }
 
     /// Design ideas for this particular room, from what the scan measured.
