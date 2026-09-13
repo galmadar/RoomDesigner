@@ -37,11 +37,6 @@ struct DesignFlowView: View {
         .environment(\.roomAccent, accent)
         .task { await prepare() }
         .task(id: library.map(\.id)) { await thumbnails.load(library) }
-        .task(id: run.stage) { if case .finished = run.stage { dismiss() } }
-        .alert("Couldn't make the picture",
-               isPresented: Binding(get: { failure != nil }, set: { if !$0 { run.reset() } })) {
-            Button("OK") { run.reset() }
-        } message: { Text(failure ?? "") }
     }
 
     private var topBar: some View {
@@ -75,7 +70,7 @@ struct DesignFlowView: View {
         default:
             HowStep(room: room, draft: draft, chosen: chosen(from: placed),
                     unplaced: unplacedObjects, sourcePhoto: sourcePhoto,
-                    run: run, onMake: { Task { await make() } })
+                    run: run, onMake: { make() })
         }
     }
 
@@ -125,11 +120,6 @@ struct DesignFlowView: View {
         return "Any angle"
     }
 
-    private var failure: String? {
-        if case .failed(let message) = run.stage { return message }
-        return nil
-    }
-
     private func prepare() async {
         await accents.load(room)
         guard bounds == nil, let captured = room.capturedRoom else { return }
@@ -141,21 +131,14 @@ struct DesignFlowView: View {
         }
     }
 
-    private func make() async {
+    /// Hands the picture to ``PictureJobs`` and closes. Nothing is awaited here:
+    /// the render and the request both belong to a job that outlives this screen.
+    private func make() {
         guard let captured = room.capturedRoom, let shot else { return }
         let proposals = room.proposals
         let all = PhotoDesignScene.placedProducts(proposals, library: library)
         let picked = chosen(from: all)
         let unplaced = unplacedObjects
-
-        // The render that goes up is made here rather than kept on screen: the
-        // three questions never show it, so there is nothing to keep in step with.
-        let mesh = PhotoDesignScene.mesh(of: captured, proposals: proposals,
-                                         placed: picked, camera: shot.camera)
-        guard let render = await ShotRenderer.shared.image(of: mesh, shot: shot,
-                                                           size: PhotoDesignScene.renderSize),
-              let png = render.pngData()
-        else { return }
 
         let products = picked.compactMap { product in
             product.object.mainImageData.map {
@@ -170,11 +153,14 @@ struct DesignFlowView: View {
             }
         }
 
-        run.start(.init(prompt: draft.trimmedPrompt, model: draft.model,
-                        photoData: sourcePhoto?.imageData, photoThumbnail: sourcePhoto?.thumbnailData,
-                        angle: angleLabel, renderPNG: png, aspectRatio: shot.aspectRatio,
-                        products: Array(products.prefix(PhotoDesignScene.maxProducts))),
-                  room: room, context: context)
+        PictureJobs.shared.start(
+            .init(prompt: draft.trimmedPrompt, model: draft.model,
+                  photoData: sourcePhoto?.imageData, photoThumbnail: sourcePhoto?.thumbnailData,
+                  angle: angleLabel, capturedRoom: captured, proposals: proposals,
+                  markerColours: PhotoDesignScene.markerColours(picked), shot: shot,
+                  products: Array(products.prefix(PhotoDesignScene.maxProducts))),
+            room: room, context: context)
+        dismiss()
     }
 
     private static func name(of object: LibraryObject) -> String {
