@@ -14,6 +14,7 @@ struct RoomDetailView: View {
     @State private var isShowingPhotos = false
     @State private var isDesigning = false
     @State private var isLayingOut = false
+    @State private var isWalking = false
 
     private var accent: Color { accents.accent(for: room) }
 
@@ -60,6 +61,10 @@ struct RoomDetailView: View {
         }
         .fullScreenCover(isPresented: $isDesigning) {
             DesignFlowView(room: room)
+        }
+        .fullScreenCover(isPresented: $isWalking) {
+            WalkView(room: room)
+                .environment(\.roomAccent, accent)
         }
         .navigationDestination(isPresented: $isLayingOut) {
             LayoutView(room: room)
@@ -256,8 +261,12 @@ struct RoomDetailView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
 
-            Button("Layout") { isLayingOut = true }
-                .buttonStyle(QuietButtonStyle())
+            HStack(spacing: 10) {
+                Button("Walk") { isWalking = true }
+                    .buttonStyle(QuietButtonStyle())
+                Button("Layout") { isLayingOut = true }
+                    .buttonStyle(QuietButtonStyle())
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)

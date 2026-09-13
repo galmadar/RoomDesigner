@@ -11,7 +11,7 @@ struct Shot {
 }
 
 /// Renders the room through any camera and crops it to any aspect, since
-/// `Renderer` only draws squares. `PreviewRenderer` stays the free camera's.
+/// `Renderer` only draws squares.
 final class ShotRenderer: @unchecked Sendable {
     /// One Metal pipeline for every screen that needs an exact shot; the queue serialises it.
     static let shared = ShotRenderer()
