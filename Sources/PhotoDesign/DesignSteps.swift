@@ -88,11 +88,25 @@ struct WhereStep: View {
     /// then kept — never rebuilt for a frame.
     private func buildMesh() async {
         guard !inside.isLoaded, let captured = room.capturedRoom else { return }
-        let mesh = await Task.detached(priority: .userInitiated) {
-            RoomGeometry.build(from: captured)
+        let built = await Task.detached(priority: .userInitiated) { () -> (Mesh, RoomFloor?) in
+            (RoomGeometry.build(from: captured), RoomFloor(room: captured))
         }.value
-        inside.load(mesh)
+        inside.load(built.0)
+        standInside(built.1)
         redraw()
+    }
+
+    /// The bounding box is not the room: a room scanned at an angle has box
+    /// corners outside its own walls, and opening in one fills the frame with
+    /// the back of a wall. The floor polygon is what says "room".
+    private func standInside(_ floor: RoomFloor?) {
+        guard let floor else { return }
+        // Pushed back to the nearest spot inside, which keeps the opening corner
+        // a corner: the middle of a room facing level is a bare wall.
+        let inside = floor.keepInside(draft.freePosition, margin: 0.4)
+        guard inside != draft.freePosition else { return }
+        draft.freePosition = inside
+        draft.freeYaw = floor.heading(from: inside)
     }
 
     /// Rough while a finger is down, sharp once it lifts. Requests supersede
