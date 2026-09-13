@@ -103,6 +103,17 @@ final class WalkState: ObservableObject {
         return Camera(eye: eye, target: eye + direction, fieldOfView: fieldOfView)
     }
 
+    /// Where you are standing, in the form the design flow can be opened with.
+    ///
+    /// The height is resolved the way ``camera`` resolves it, so the picture is
+    /// framed through the camera that is on screen rather than one near it.
+    var standing: Standing {
+        let height = min(level + eyeHeight, ceiling - 0.1)
+        return Standing(position: position, yaw: yaw, pitch: pitch,
+                        eyeHeight: height - level, level: level,
+                        fieldOfView: fieldOfView)
+    }
+
     /// Whether walking is held inside the walls at all — false for a scan with
     /// no floor surface, where there is no outline to test against.
     var stopsAtWalls: Bool { floor != nil }
