@@ -42,8 +42,7 @@ struct ScanFlowView: View {
                 if RoomCaptureSession.isSupported {
                     ZStack {
                         Button(isFinished ? "Finishing…" : "Done") { isFinished = true }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
+                            .buttonStyle(CameraChipStyle())
                             .disabled(isFinished)
                         // A bottom corner: under the thumb, and clear of RoomPlan's
                         // coaching, which sits mid-screen.
@@ -61,7 +60,8 @@ struct ScanFlowView: View {
         .sensoryFeedback(.warning, trigger: camera.misses)
         .overlay(alignment: .topTrailing) {
             Button("Cancel") { dismiss() }
-                .padding()
+                .buttonStyle(CameraChipStyle())
+                .padding(16)
         }
         .alert("Scan failed", isPresented: .constant(failure != nil)) {
             Button("OK") { failure = nil; dismiss() }
@@ -90,10 +90,39 @@ struct ScanFlowView: View {
     }
 
     private var unsupported: some View {
-        ContentUnavailableView {
-            Label("No LiDAR scanner", systemImage: "exclamationmark.triangle")
-        } description: {
-            Text("Room scanning needs a device with a LiDAR scanner — a Pro iPhone or an iPad Pro.")
+        ZStack {
+            Paper.sheet.ignoresSafeArea()
+            VStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 34, weight: .light))
+                    .foregroundStyle(Paper.mutedInk)
+                Text("No LiDAR scanner")
+                    .question()
+                    .multilineTextAlignment(.center)
+                Text("Room scanning needs a device with a LiDAR scanner — a Pro iPhone or an iPad Pro.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Paper.secondaryInk)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 40)
+            }
         }
+    }
+}
+
+/// Our controls over RoomPlan's own camera view: the design's card, raised off a
+/// moving picture rather than tinted into it.
+private struct CameraChipStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 16, weight: .semibold))
+            .foregroundStyle(Paper.ink)
+            .padding(.horizontal, 22)
+            .frame(minHeight: 48)
+            .background(Paper.card, in: Capsule())
+            .shadow(color: .black.opacity(0.22), radius: 8, y: 2)
+            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.5)
     }
 }

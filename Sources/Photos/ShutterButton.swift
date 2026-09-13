@@ -6,6 +6,8 @@ struct ShutterButton: View {
     let count: Int
     let action: () -> Void
 
+    @Environment(\.roomAccent) private var accent
+
     var body: some View {
         Button(action: action) {
             ZStack {
@@ -20,11 +22,11 @@ struct ShutterButton: View {
             .overlay(alignment: .topTrailing) {
                 if count > 0 {
                     Text("\(count)")
-                        .font(.footnote.weight(.bold).monospacedDigit())
-                        .foregroundStyle(.black)
+                        .font(.system(size: 13, weight: .bold).monospacedDigit())
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 7)
                         .frame(minWidth: 26, minHeight: 26)
-                        .background(.yellow, in: Capsule())
+                        .background(accent, in: Capsule())
                         .offset(x: 6, y: -6)
                 }
             }

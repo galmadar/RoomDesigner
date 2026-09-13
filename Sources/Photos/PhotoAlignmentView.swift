@@ -25,19 +25,27 @@ struct PhotoAlignmentView: View {
                     .overlay { if showsLines, let viewpoint { outlines(viewpoint) } }
                     .onTapGesture { showsLines.toggle() }
             } else if failed {
-                Text("This photo couldn't be opened.").foregroundStyle(.white)
+                Text("This photo couldn't be opened.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Paper.ink)
+                    .padding(.horizontal, 18)
+                    .frame(minHeight: 56)
+                    .paperCard()
             } else {
-                ProgressView().tint(.white)
+                ProgressView().tint(Paper.fallbackAccent)
             }
         }
         .overlay(alignment: .topTrailing) {
             Button { dismiss() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.largeTitle)
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, .black.opacity(0.5))
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Paper.ink)
+                    .frame(width: 44, height: 44)
+                    .background(Paper.card, in: Circle())
+                    .shadow(color: .black.opacity(0.3), radius: 6, y: 1)
             }
-            .padding()
+            .padding(16)
+            .accessibilityLabel("Done")
         }
         .overlay(alignment: .bottom) { notes }
         .task { await load() }
@@ -50,26 +58,30 @@ struct PhotoAlignmentView: View {
     }
 
     private var notes: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 6) {
             Text(showsLines
                  ? "If the lines sit on the real walls and floor, the photo lines up with the scan. Tap the photo to hide them."
                  : "Tap the photo to show the lines again.")
+                .foregroundStyle(Paper.ink)
             if let check = photo.viewpoint?.arkitCheckPixels {
                 Text("Camera maths vs ARKit: \(check, format: .number.precision(.fractionLength(1))) px")
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(Paper.secondaryInk)
             }
             if let alignment {
-                Text(alignment.summary).foregroundStyle(.white.opacity(0.7))
+                Text(alignment.summary).foregroundStyle(Paper.secondaryInk)
                 if !alignment.isNegligible {
                     Toggle("Correct for the difference", isOn: $corrects)
+                        .foregroundStyle(Paper.ink)
+                        .tint(Paper.fallbackAccent)
                 }
             }
         }
-        .font(.caption)
-        .foregroundStyle(.white)
-        .padding(12)
-        .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
-        .padding()
+        .font(.system(size: 13))
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .paperCard(radius: 16)
+        .padding(16)
     }
 
     private func outlines(_ viewpoint: PhotoViewpoint) -> some View {
