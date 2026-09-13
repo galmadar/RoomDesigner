@@ -28,7 +28,7 @@ struct LayoutView: View {
             if let captured = room.capturedRoom {
                 content(FloorPlan(room: captured), bounds: RoomGeometry.build(from: captured).bounds)
             } else {
-                ContentUnavailableView("Nothing scanned", systemImage: "questionmark")
+                unscanned
             }
         }
         .navigationTitle("Layout")
@@ -66,6 +66,25 @@ struct LayoutView: View {
         } message: {
             Text("Saves the furniture as it stands now, so you can come back to it after trying something else.")
         }
+    }
+
+    private var unscanned: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "questionmark")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Paper.mutedInk)
+            Text("Nothing scanned")
+                .question()
+                .multilineTextAlignment(.center)
+            Text("This room has no scan, so there is no floor to stand anything on.")
+                .font(.system(size: 14))
+                .foregroundStyle(Paper.secondaryInk)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.bottom, 40)
     }
 
     private func content(_ plan: FloorPlan, bounds: (min: SIMD3<Float>, max: SIMD3<Float>)) -> some View {
@@ -139,7 +158,7 @@ struct LayoutView: View {
             plainAction("rotate.right") { turn(selected, by: .pi / 12) }
             plainAction("minus.magnifyingglass") { resize(selected, by: 0.9) }
             plainAction("plus.magnifyingglass") { resize(selected, by: 1.1) }
-            plainAction("trash", tint: Color(uiColor: UIColor(rgb: 0x9C5A52))) { remove(selected) }
+            plainAction("trash", tint: Paper.destructive) { remove(selected) }
         }
         .padding(.horizontal, 20)
     }
@@ -166,7 +185,7 @@ struct LayoutView: View {
                 isNamingArrangement = true
             }
             .disabled(room.proposals.isEmpty)
-            quiet("Clear", symbol: "trash", tint: Color(uiColor: UIColor(rgb: 0x9C5A52))) { clearAll() }
+            quiet("Clear", symbol: "trash", tint: Paper.destructive) { clearAll() }
                 .disabled(room.proposals.isEmpty)
         }
     }
@@ -191,6 +210,7 @@ struct LayoutView: View {
                 Text("Saved versions")
                     .font(.system(size: 13))
                     .foregroundStyle(Paper.secondaryInk)
+                    .padding(.horizontal, 20)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(room.arrangements) { arrangement in
@@ -220,8 +240,6 @@ struct LayoutView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 0)
-            .overlay(alignment: .topLeading) { Color.clear.frame(width: 0, height: 0) }
         }
     }
 
