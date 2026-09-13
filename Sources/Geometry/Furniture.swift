@@ -15,6 +15,8 @@ struct Proposal: Codable, Identifiable, Hashable {
     var rotation: Float = 0
     /// Width, height, depth in metres. Starts at the kind's default.
     var size: SIMD3<Float>
+    /// The library product this piece stands in for. Optional so layouts saved before products existed still decode.
+    var libraryObjectID: UUID?
 
     init(kind: Furniture.Kind, position: SIMD2<Float>) {
         self.kind = kind
@@ -142,16 +144,25 @@ enum Furniture {
     /// roughly phone height — so a room's floor sits a metre or more below zero.
     /// Building a sofa up from y = 0 leaves it hanging in the air.
     static func mesh(for proposal: Proposal, floorLevel: Float) -> Mesh {
-        var placed = mesh(for: proposal.kind, size: proposal.size)
+        mesh(for: proposal.kind, size: proposal.size)
+            .transformed(by: placement(of: proposal, floorLevel: floorLevel))
+    }
+
+    /// One plain box at the piece's full size: an image model reads a marker's extent from a box, not from a sofa's arms.
+    static func box(for proposal: Proposal, floorLevel: Float) -> Mesh {
+        var box = ProxyMeshLibrary.box(proposal.size)
+        box.positions = box.positions.map { $0 + SIMD3(0, proposal.size.y / 2, 0) }
+        return box.transformed(by: placement(of: proposal, floorLevel: floorLevel))
+    }
+
+    private static func placement(of proposal: Proposal, floorLevel: Float) -> simd_float4x4 {
         let c = cos(proposal.rotation), s = sin(proposal.rotation)
-        let transform = simd_float4x4(
+        return simd_float4x4(
             SIMD4(c, 0, s, 0),
             SIMD4(0, 1, 0, 0),
             SIMD4(-s, 0, c, 0),
             SIMD4(proposal.position.x, floorLevel, proposal.position.y, 1)
         )
-        placed = placed.transformed(by: transform)
-        return placed
     }
 
     private static func legs(_ builder: inout Builder, width: Float, height: Float,

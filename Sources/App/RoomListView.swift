@@ -43,10 +43,17 @@ struct RoomListView: View {
             }
             .navigationTitle("Rooms")
             .navigationDestination(for: ScannedRoom.self) { RoomDetailView(room: $0) }
+            .navigationDestination(for: LibraryRoute.self) { _ in LibraryView() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { isShowingSettings = true } label: {
                         Label("Settings", systemImage: "gearshape")
+                    }
+                }
+                // Always shown: the library doesn't depend on having a room yet.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { path.append(LibraryRoute()) } label: {
+                        Label("Library", systemImage: "square.grid.2x2")
                     }
                 }
                 if !rooms.isEmpty {
@@ -62,10 +69,16 @@ struct RoomListView: View {
                 path.append(room)
             }
             .fullScreenCover(isPresented: $isScanning) {
-                ScanFlowView { captured in
+                ScanFlowView { scan in
                     let room = ScannedRoom(name: "Room \(rooms.count + 1)")
-                    room.capturedRoom = captured
+                    room.capturedRoom = scan.room
+                    room.liveRoomData = scan.liveRoomData
                     context.insert(room)
+                    for shot in scan.shots {
+                        let photo = ScanPhoto(shot)
+                        context.insert(photo)
+                        photo.room = room
+                    }
                 }
             }
             .overlay(alignment: .bottom) {

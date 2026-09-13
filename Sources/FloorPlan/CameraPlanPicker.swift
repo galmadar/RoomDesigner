@@ -25,6 +25,21 @@ struct CameraPlanPicker: View {
     /// pixel it passed through.
     var onBeginEdit: () -> Void = {}
 
+    /// What a proposal stands in for, when it is a library product.
+    struct ProductLink {
+        var name: String
+        var thumbnail: UIImage?
+        /// Its box colour in "Design with photos"; nil once the eight colours are used up.
+        var marker: Marker?
+    }
+    var links: [Proposal.ID: ProductLink] = [:]
+
+    /// Where each photo was taken, in the room's photo order; nil where the pose can't be read.
+    var photoSpots: [PlanSpot?] = []
+    /// The photo the camera stands at, if it hasn't moved since.
+    var activeSpot: Int?
+    var onPickSpot: (Int) -> Void = { _ in }
+
     @State private var grabbed: Grab?
     @State private var zoom: CGFloat = 1
     @State private var zoomAnchor: CGFloat = 1
@@ -52,6 +67,7 @@ struct CameraPlanPicker: View {
             Canvas { context, size in
                 guard let projection = projection(for: size) else { return }
                 FloorPlanView.draw(plan, in: context, using: projection, labels: true)
+                drawPhotoSpots(in: context, using: projection, dimmed: mode == .furniture)
                 drawProposals(in: context, using: projection)
                 drawCamera(in: context, using: projection, dimmed: mode == .furniture)
             }
@@ -85,6 +101,21 @@ struct CameraPlanPicker: View {
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(.thinMaterial, in: Capsule())
                         .padding(8)
+                }
+            }
+            // Real buttons over the drawn spots, so they're tappable and VoiceOver can find them.
+            // The active one steps aside: the camera dot sits on it and must stay draggable.
+            .overlay {
+                if mode == .camera, let projection = projection(for: geometry.size) {
+                    ForEach(photoSpots.indices, id: \.self) { index in
+                        if let spot = photoSpots[index], index != activeSpot {
+                            Button { onPickSpot(index) } label: {
+                                Color.clear.frame(width: 36, height: 36).contentShape(Circle())
+                            }
+                            .accessibilityLabel("Photo spot \(index + 1)")
+                            .position(projection.point(spot.position))
+                        }
+                    }
                 }
             }
         }
@@ -164,24 +195,78 @@ struct CameraPlanPicker: View {
                              width: projection.length(proposal.size.x),
                              height: projection.length(proposal.size.z))
             let isSelected = proposal.id == selection
+            let link = links[proposal.id]
+            // A product shows the colour its box gets in the model's picture.
+            let tint = link.map { $0.marker?.color ?? .gray } ?? .green
 
             context.drawLayer { layer in
                 layer.translateBy(x: centre.x, y: centre.y)
                 layer.rotate(by: .radians(Double(proposal.rotation)))
                 let path = Path(roundedRect: box, cornerRadius: 3)
-                layer.fill(path, with: .color(.green.opacity(isSelected ? 0.42 : 0.24)))
-                layer.stroke(path, with: .color(.green),
+                layer.fill(path, with: .color(tint.opacity(isSelected ? 0.42 : 0.24)))
+                layer.stroke(path, with: .color(tint),
                              style: StrokeStyle(lineWidth: isSelected ? 3 : 1.5))
 
                 // A notch on the front edge, so rotation is readable at a glance.
                 var front = Path()
                 front.move(to: CGPoint(x: box.minX, y: box.minY))
                 front.addLine(to: CGPoint(x: box.maxX, y: box.minY))
-                layer.stroke(front, with: .color(.green), lineWidth: isSelected ? 5 : 3)
+                layer.stroke(front, with: .color(tint), lineWidth: isSelected ? 5 : 3)
             }
 
-            context.draw(Text(proposal.kind.label).font(.system(size: 9, weight: .medium))
-                            .foregroundStyle(.green), at: centre)
+            guard let link else {
+                context.draw(Text(proposal.kind.label).font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.green), at: centre)
+                continue
+            }
+            drawLabel(of: link, at: centre, room: min(box.width, box.height), in: context)
+        }
+    }
+
+    /// The product's picture when the piece is big enough on screen to hold it, and its name.
+    private func drawLabel(of link: ProductLink, at centre: CGPoint, room: CGFloat,
+                           in context: GraphicsContext) {
+        let name = link.name.count > 20 ? link.name.prefix(19) + "…" : link.name
+        let text = Text(name).font(.system(size: 9, weight: .semibold)).foregroundStyle(.primary)
+        guard let thumbnail = link.thumbnail, room >= 34 else {
+            context.draw(text, at: centre)
+            return
+        }
+        let side = min(room - 10, 40)
+        let picture = context.resolve(Image(uiImage: thumbnail))
+        let scale = side / max(picture.size.width, picture.size.height, 1)
+        let size = CGSize(width: picture.size.width * scale, height: picture.size.height * scale)
+        context.draw(picture, in: CGRect(x: centre.x - size.width / 2, y: centre.y - size.height / 2 - 6,
+                                         width: size.width, height: size.height))
+        context.draw(text, at: CGPoint(x: centre.x, y: centre.y + size.height / 2 + 2))
+    }
+
+    /// A numbered square where each photo was taken, with a wedge the way it faced.
+    private func drawPhotoSpots(in context: GraphicsContext, using projection: PlanProjection,
+                                dimmed: Bool) {
+        let fade = dimmed ? 0.35 : 1.0
+        for (index, spot) in photoSpots.enumerated() {
+            guard let spot else { continue }
+            let centre = projection.point(spot.position)
+            let tint = index == activeSpot ? Color.accentColor : Color(white: 0.3)
+
+            var wedge = Path()
+            wedge.move(to: centre)
+            wedge.addArc(center: centre, radius: max(projection.length(0.8), 30),
+                         startAngle: .radians(Double(spot.yaw - spot.fieldOfView / 2) - .pi / 2),
+                         endAngle: .radians(Double(spot.yaw + spot.fieldOfView / 2) - .pi / 2),
+                         clockwise: false)
+            wedge.closeSubpath()
+            context.fill(wedge, with: .color(tint.opacity(0.12 * fade)))
+            context.stroke(wedge, with: .color(tint.opacity(0.5 * fade)),
+                           style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+
+            let badge = Path(roundedRect: CGRect(x: centre.x - 10, y: centre.y - 10, width: 20, height: 20),
+                             cornerRadius: 5)
+            context.fill(badge, with: .color(tint.opacity(fade)))
+            context.stroke(badge, with: .color(.white.opacity(fade)), lineWidth: 1.5)
+            context.draw(Text("\(index + 1)").font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white.opacity(fade)), at: centre)
         }
     }
 

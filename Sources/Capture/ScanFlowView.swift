@@ -1,23 +1,31 @@
 import RoomPlan
 import SwiftUI
 
-/// Full-screen scanning: walk the room, tap Done, get a `CapturedRoom` back.
+/// Full-screen scanning: walk the room, take photos along the way, tap Done,
+/// get a `CapturedRoom` back along with the photos.
 struct ScanFlowView: View {
+    /// Everything one scan produced, handed over whole so the caller can build the room in one place.
+    struct Result {
+        let room: CapturedRoom
+        let shots: [ScanCamera.Shot]
+        let liveRoomData: Data?
+    }
+
     @Environment(\.dismiss) private var dismiss
 
-    let onCaptured: (CapturedRoom) -> Void
+    let onCaptured: (Result) -> Void
 
+    @StateObject private var camera = ScanCamera()
     @State private var isFinished = false
     @State private var failure: String?
 
     var body: some View {
         ZStack {
             if RoomCaptureSession.isSupported {
-                RoomCaptureViewRepresentable(isFinished: isFinished) { result in
+                RoomCaptureViewRepresentable(isFinished: isFinished, camera: camera) { result in
                     switch result {
                     case .success(let room):
-                        onCaptured(room)
-                        dismiss()
+                        Task { @MainActor in await finish(with: room) }
                     case .failure(let error):
                         failure = error.localizedDescription
                     }
@@ -27,17 +35,30 @@ struct ScanFlowView: View {
                 unsupported
             }
 
+            flash
+
             VStack {
                 Spacer()
                 if RoomCaptureSession.isSupported {
-                    Button(isFinished ? "Finishing…" : "Done") { isFinished = true }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(isFinished)
-                        .padding(.bottom, 32)
+                    ZStack {
+                        Button(isFinished ? "Finishing…" : "Done") { isFinished = true }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .disabled(isFinished)
+                        // A bottom corner: under the thumb, and clear of RoomPlan's
+                        // coaching, which sits mid-screen.
+                        if !isFinished {
+                            ShutterButton(count: camera.count) { camera.capture() }
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .padding(.trailing, 24)
+                        }
+                    }
+                    .padding(.bottom, 32)
                 }
             }
         }
+        .sensoryFeedback(.impact(weight: .medium), trigger: camera.count)
+        .sensoryFeedback(.warning, trigger: camera.misses)
         .overlay(alignment: .topTrailing) {
             Button("Cancel") { dismiss() }
                 .padding()
@@ -47,6 +68,25 @@ struct ScanFlowView: View {
         } message: {
             Text(failure ?? "")
         }
+    }
+
+    /// A white blink over the camera feed, like a shutter firing.
+    private var flash: some View {
+        Color.white
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+            .keyframeAnimator(initialValue: 0.0, trigger: camera.count) { content, opacity in
+                content.opacity(opacity)
+            } keyframes: { _ in
+                LinearKeyframe(0.7, duration: 0.04)
+                CubicKeyframe(0, duration: 0.25)
+            }
+    }
+
+    private func finish(with captured: CapturedRoom) async {
+        let shots = await camera.collected()
+        onCaptured(Result(room: captured, shots: shots, liveRoomData: camera.liveRoomData))
+        dismiss()
     }
 
     private var unsupported: some View {

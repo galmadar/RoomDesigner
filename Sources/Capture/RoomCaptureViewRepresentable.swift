@@ -6,12 +6,16 @@ import SwiftUI
 struct RoomCaptureViewRepresentable: UIViewRepresentable {
     /// Flipped to true by the caller when the user taps Done.
     let isFinished: Bool
+    /// Photos come from this view's own AR session, so the camera needs the view.
+    let camera: ScanCamera
     let onFinish: (Result<CapturedRoom, Error>) -> Void
 
     func makeUIView(context: Context) -> RoomCaptureView {
         let view = RoomCaptureView(frame: .zero)
         view.delegate = context.coordinator
         view.captureSession.run(configuration: RoomCaptureSession.Configuration())
+        // After `run`, in case the view claims the session's delegate there.
+        camera.attach(to: view)
         context.coordinator.view = view
         return view
     }

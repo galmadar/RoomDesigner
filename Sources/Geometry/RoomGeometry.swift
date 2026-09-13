@@ -8,8 +8,17 @@ import simd
 /// depending on a loader — for geometry we can assemble in a few hundred lines.
 enum RoomGeometry {
 
+    /// For the picture sent with "Design with photos": marked pieces become solid boxes in
+    /// their colour, and every other proposal goes the same neutral grey as scanned furniture.
+    struct Markers {
+        var colours: [Proposal.ID: SIMD3<Float>]
+        /// Unit vector from the scene towards the camera.
+        var towardsCamera: SIMD3<Float>
+    }
+
     static func build(from room: CapturedRoom,
                       proposals: [Proposal] = [],
+                      markers: Markers? = nil,
                       proxies: ProxyMeshLibrary = .boundingBoxes) -> Mesh {
         var mesh = Mesh()
 
@@ -42,11 +51,25 @@ enum RoomGeometry {
         let floorLevel = room.floors.first.map { $0.transform.columns.3.y }
             ?? (mesh.isEmpty ? 0 : mesh.bounds.min.y)
         for proposal in proposals {
+            if let markers, let colour = markers.colours[proposal.id] {
+                var box = Furniture.box(for: proposal, floorLevel: floorLevel)
+                box.tint(colour)
+                lean(&box, towards: markers.towardsCamera)
+                mesh.append(box)
+                continue
+            }
             var piece = Furniture.mesh(for: proposal, floorLevel: floorLevel)
-            piece.tint(Palette.proposed)
+            // Green would read as a marker colour to the model, so unmarked pieces go neutral.
+            piece.tint(markers == nil ? Palette.proposed : Palette.scanned)
             mesh.append(piece)
         }
         return mesh
+    }
+
+    /// The headlight shades a turned-away face down to 45%, which makes yellow read as olive.
+    /// Leaning normals at the camera keeps the colour nameable and still leaves the edges visible.
+    private static func lean(_ mesh: inout Mesh, towards camera: SIMD3<Float>, edges: Float = 0.8) {
+        mesh.normals = mesh.normals.map { simd_normalize(camera + edges * $0) }
     }
 
     // MARK: -

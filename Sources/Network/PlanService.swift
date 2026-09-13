@@ -128,4 +128,63 @@ struct PlanService {
         }
         return try JSONDecoder().decode(SuggestionResponse.self, from: data).suggestions
     }
+
+    // MARK: - Object library
+
+    /// What the service found on a product page. The image URLs point at the
+    /// shop, so the pictures are fetched by the device, not relayed.
+    struct ImportedObject: Decodable {
+        let title: String?
+        let images: [String]
+        let source: String?
+
+        /// Strings rather than `[URL]` so one malformed address drops one picture, not the lot.
+        var imageURLs: [URL] { images.compactMap(URL.init(string:)) }
+    }
+
+    enum ImportFailure: LocalizedError {
+        /// The service's own explanation, written to be shown as is.
+        case rejected(String)
+        case unavailable(status: Int)
+
+        var errorDescription: String? {
+            switch self {
+            case .rejected(let detail):
+                return detail
+            case .unavailable(404):
+                return "Adding from a link isn't available on the server yet."
+            case .unavailable(let status):
+                return "The server couldn't read that page just now (error \(status))."
+            }
+        }
+    }
+
+    private struct ImportRequest: Encodable {
+        let url: String
+    }
+
+    private struct ImportErrorBody: Decodable {
+        let detail: String
+    }
+
+    func importObject(from url: URL) async throws -> ImportedObject {
+        var request = URLRequest(url: Self.baseURL.appendingPathComponent("objects/import"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 45         // the service fetches the shop's page first
+        request.httpBody = try JSONEncoder().encode(ImportRequest(url: url.absoluteString))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(status) else {
+            // Only these carry text meant for people; a framework 404 says just "Not Found".
+            if [400, 422, 502].contains(status),
+               let body = try? JSONDecoder().decode(ImportErrorBody.self, from: data),
+               !body.detail.isEmpty {
+                throw ImportFailure.rejected(body.detail)
+            }
+            throw ImportFailure.unavailable(status: status)
+        }
+        return try JSONDecoder().decode(ImportedObject.self, from: data)
+    }
 }
