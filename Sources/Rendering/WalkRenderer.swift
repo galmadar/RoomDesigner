@@ -23,9 +23,9 @@ final class WalkRenderer: NSObject, MTKViewDelegate {
     private let queue: MTLCommandQueue
     private let pipeline: MTLRenderPipelineState
     private let depthState: MTLDepthStencilState
-    private let vertices: MTLBuffer
-    private let indices: MTLBuffer
-    private let indexCount: Int
+    private var vertices: MTLBuffer
+    private var indices: MTLBuffer
+    private var indexCount: Int
     private let sampleCount: Int
     private var lastFrame: CFTimeInterval?
 
@@ -82,6 +82,15 @@ final class WalkRenderer: NSObject, MTKViewDelegate {
         // A 3× drawable costs 2¼× the fragments of a 2× one, for detail nobody
         // can see on a wall of flat colour at arm's length.
         view.contentScaleFactor = min(view.window?.screen.scale ?? 2, 2)
+    }
+
+    /// Swaps the room's geometry for another layout of it. Main-actor, like
+    /// `draw`, so a frame can never read one buffer against the other's count.
+    func replace(mesh: Mesh) {
+        guard let buffers = RoomPipeline.buffers(for: mesh, device: device) else { return }
+        vertices = buffers.vertices
+        indices = buffers.indices
+        indexCount = mesh.indices.count
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}

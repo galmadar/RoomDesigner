@@ -130,6 +130,12 @@ struct WalkView: View {
             HStack(alignment: .bottom) {
                 ThumbStick { walk.walk = $0 }
                 Spacer(minLength: 12)
+                LensDial(fieldOfView: walk.fieldOfView,
+                         range: WalkState.narrowestLens...WalkState.widestLens,
+                         strayedFrom: strayedFromPhoto,
+                         onChange: { walk.setFieldOfView($0) },
+                         onMatch: { walk.matchSpotLens() })
+                Spacer(minLength: 12)
                 HeightSlider(height: walk.eyeHeight,
                              range: WalkState.lowestEye...WalkState.highestEye) {
                     walk.setEyeHeight($0)
@@ -161,6 +167,8 @@ struct WalkView: View {
 
             Spacer(minLength: 0)
 
+            if walk.layouts.count > 1 { layoutPicker }
+
             Text(heightLabel)
                 .font(.system(size: 14).monospacedDigit())
                 .foregroundStyle(Paper.secondaryInk)
@@ -175,6 +183,49 @@ struct WalkView: View {
 
     private var heightLabel: String {
         String(format: "%.2f m", walk.eyeHeight)
+    }
+
+    /// The photo whose lens the view no longer has, when standing at one.
+    private var strayedFromPhoto: Int? {
+        guard let standing = walk.standingAt, !walk.lensMatchesSpot else { return nil }
+        return standing + 1
+    }
+
+    private var showingLayout: String {
+        walk.layouts.first { $0.id == walk.showing }?.name ?? "As it stands now"
+    }
+
+    /// Only for a room that has arrangements saved — otherwise there is nothing
+    /// to choose between, and the bar stays as it was.
+    private var layoutPicker: some View {
+        Menu {
+            ForEach(walk.layouts) { layout in
+                Button { Task { await walk.show(layout.id) } } label: {
+                    if layout.id == walk.showing {
+                        Label(layout.name, systemImage: "checkmark")
+                    } else {
+                        Text(layout.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if walk.isRelaying {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "sofa").font(.system(size: 13))
+                }
+                Text(showingLayout)
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Paper.ink)
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .frame(maxWidth: 150)
+            .background(.regularMaterial, in: Capsule())
+        }
+        .accessibilityLabel("Furniture layout, \(showingLayout)")
     }
 
     /// Standing where a photo was taken is one tap; comparing it is the next.
@@ -356,6 +407,70 @@ private struct ThumbStick: View {
         // Drawn from shapes, which are invisible to VoiceOver until asked.
         .accessibilityElement()
         .accessibilityLabel("Walk")
+    }
+}
+
+/// The lens, lying in the gap the stick and the height slider already left.
+///
+/// Horizontal on purpose: a second upright slider beside the height one would
+/// read as a matching pair and be grabbed by the wrong thumb. Here it costs the
+/// screen no row of its own — it fills chrome space that was empty.
+private struct LensDial: View {
+    let fieldOfView: Float
+    let range: ClosedRange<Float>
+    /// The photo whose lens this no longer is, when standing at one.
+    let strayedFrom: Int?
+    var onChange: (Float) -> Void
+    var onMatch: () -> Void
+
+    @Environment(\.roomAccent) private var accent
+
+    private var degrees: Int { Int((fieldOfView * 180 / .pi).rounded()) }
+
+    private var words: String {
+        let angle = fieldOfView * 180 / .pi
+        if angle < 60 { return "tight, picks out one corner" }
+        if angle < 76 { return "natural, like your eyes" }
+        if angle < 92 { return "wide, more of the room at once" }
+        return "very wide, the edges stretch"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let strayedFrom {
+                Button(action: onMatch) {
+                    caption("not photo \(strayedFrom)'s lens — tap to match", in: accent)
+                }
+                .buttonStyle(.plain)
+            } else {
+                caption(words, in: Paper.secondaryInk)
+            }
+
+            Slider(value: Binding(get: { Double(fieldOfView) },
+                                  set: { onChange(Float($0)) }),
+                   in: Double(range.lowerBound)...Double(range.upperBound))
+                .frame(minHeight: 44)
+                .accessibilityLabel("Lens")
+                .accessibilityValue("\(degrees) degrees, \(words)")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private func caption(_ text: String, in tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text("Lens \(degrees)°")
+                .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                .foregroundStyle(Paper.ink)
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundStyle(tint)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
     }
 }
 
