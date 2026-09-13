@@ -131,6 +131,7 @@ private struct RoomCard: View {
     let room: ScannedRoom
 
     @ObservedObject private var accents = RoomAccents.shared
+    @ObservedObject private var jobs = PictureJobs.shared
     @State private var cover: UIImage?
 
     private var accent: Color { accents.accent(for: room) }
@@ -149,6 +150,12 @@ private struct RoomCard: View {
                 Text(summary)
                     .font(.system(size: 13))
                     .foregroundStyle(Paper.secondaryInk)
+                // So something cooking is visible without opening the room.
+                ForEach(jobs.jobs(for: room)) { job in
+                    MakingPictureBadge(job: job)
+                        .environment(\.roomAccent, accent)
+                        .padding(.top, 2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)

@@ -7,6 +7,7 @@ struct PictureGalleryView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @ObservedObject private var jobs = PictureJobs.shared
     @State private var opened: RoomPicture?
     @State private var doomed: RoomPicture?
 
@@ -22,6 +23,12 @@ struct PictureGalleryView: View {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
                                         GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        // Being made comes before made: the grid stays newest first.
+                        ForEach(jobs.jobs(for: room)) { job in
+                            MakingPictureTile(job: job)
+                                .aspectRatio(1, contentMode: .fill)
+                                .frame(maxWidth: .infinity)
+                        }
                         ForEach(pictures) { picture in
                             Button { opened = picture } label: { tile(picture) }
                                 .buttonStyle(.plain)

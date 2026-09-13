@@ -94,9 +94,19 @@ enum PhotoDesignScene {
 
     static func mesh(of room: CapturedRoom, proposals: [Proposal],
                      placed: [PlacedProduct], camera: Camera) -> Mesh {
-        let colours = Dictionary(placed.compactMap { product in
+        mesh(of: room, proposals: proposals, colours: markerColours(placed), camera: camera)
+    }
+
+    /// The colours alone, so a request can be started without carrying library
+    /// models into a job that outlives the screen that built it.
+    static func markerColours(_ placed: [PlacedProduct]) -> [Proposal.ID: SIMD3<Float>] {
+        Dictionary(placed.compactMap { product in
             product.marker.map { (product.proposal.id, $0.rgb) }
         }, uniquingKeysWith: { first, _ in first })
+    }
+
+    static func mesh(of room: CapturedRoom, proposals: [Proposal],
+                     colours: [Proposal.ID: SIMD3<Float>], camera: Camera) -> Mesh {
         let towards = simd_normalize(camera.eye - camera.target)
         return RoomGeometry.build(from: room, proposals: proposals,
                                   markers: .init(colours: colours, towardsCamera: towards))

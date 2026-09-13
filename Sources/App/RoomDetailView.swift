@@ -7,6 +7,7 @@ struct RoomDetailView: View {
     @Bindable var room: ScannedRoom
 
     @ObservedObject private var accents = RoomAccents.shared
+    @ObservedObject private var jobs = PictureJobs.shared
 
     @State private var heroImage: UIImage?
     @State private var opened: RoomPicture?
@@ -37,7 +38,7 @@ struct RoomDetailView: View {
                     Button { isShowingGallery = true } label: {
                         Label("All pictures", systemImage: "square.grid.2x2")
                     }
-                    .disabled(pictures.isEmpty)
+                    .disabled(pictures.isEmpty && roomJobs.isEmpty)
                     Button { isShowingPhotos = true } label: {
                         Label("Photos of the room", systemImage: "camera")
                     }
@@ -77,7 +78,7 @@ struct RoomDetailView: View {
 
     private var content: some View {
         VStack(spacing: 0) {
-            hero.map { heroCard($0) } ?? AnyView(emptyHero)
+            top
             photoStrip
             counts
             Spacer(minLength: 12)
@@ -103,6 +104,21 @@ struct RoomDetailView: View {
     }
 
     private var hero: RoomPicture? { pictures.first }
+
+    /// Pictures of this room still being made, newest first.
+    private var roomJobs: [PhotoDesignRun] { jobs.jobs(for: room) }
+
+    /// A picture on its way is the newest thing about the room, so it takes the
+    /// top of the screen until it arrives or fails.
+    @ViewBuilder private var top: some View {
+        if let job = roomJobs.first {
+            MakingPictureHero(job: job)
+        } else if let hero {
+            heroCard(hero)
+        } else {
+            emptyHero
+        }
+    }
 
     private func heroCard(_ picture: RoomPicture) -> AnyView {
         AnyView(
@@ -234,7 +250,7 @@ struct RoomDetailView: View {
     }
 
     private var counts: some View {
-        Button { if !pictures.isEmpty { isShowingGallery = true } } label: {
+        Button { if !pictures.isEmpty || !roomJobs.isEmpty { isShowingGallery = true } } label: {
             Text(countsText)
                 .font(.system(size: 13))
                 .foregroundStyle(Paper.secondaryInk)
@@ -250,7 +266,9 @@ struct RoomDetailView: View {
         let made = pictures.count
         let left = made == 1 ? "1 picture" : "\(made) pictures"
         let right = photos == 1 ? "1 photo of the real room" : "\(photos) photos of the real room"
-        return "\(left) · \(right)"
+        let working = roomJobs.filter(\.isWorking).count
+        let making = working == 0 ? "" : " · \(working) being made"
+        return "\(left) · \(right)\(making)"
     }
 
     // MARK: - The one action
