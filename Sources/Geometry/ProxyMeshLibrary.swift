@@ -41,11 +41,23 @@ struct ProxyMeshLibrary {
         builders[Key(category: category, variant: variant)] = builder
     }
 
-    func mesh(for object: CapturedRoom.Object) -> Mesh {
-        let specific = Key(category: object.category, variant: Self.variant(of: object))
-        let generic = Key(category: object.category, variant: "")
+    /// The category and the size are both open to correction, and both have to
+    /// be, because this is where a correction becomes geometry: the key decides
+    /// which proxy stands in for the thing, and the size decides how big the
+    /// box is in the mesh the conditioning image is rendered from. A wrong box
+    /// is a wrong picture, and no prompt can argue with it.
+    ///
+    /// Passing neither is exactly the old behaviour, byte for byte.
+    func mesh(for object: CapturedRoom.Object,
+              category: CapturedRoom.Object.Category? = nil,
+              dimensions: SIMD3<Float>? = nil,
+              transform: simd_float4x4? = nil) -> Mesh {
+        let resolved = category ?? object.category
+        let specific = Key(category: resolved, variant: Self.variant(of: object))
+        let generic = Key(category: resolved, variant: "")
         let builder = builders[specific] ?? builders[generic] ?? Self.box
-        return builder(object.dimensions).transformed(by: object.transform)
+        return builder(dimensions ?? object.dimensions)
+            .transformed(by: transform ?? object.transform)
     }
 
     /// A unit cuboid, scaled. What RoomPlan actually knows about the object.

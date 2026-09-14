@@ -17,6 +17,7 @@ struct RoomDetailView: View {
     @State private var isLayingOut = false
     @State private var isWalking = false
     @State private var isSeeingScan = false
+    @State private var isCorrectingRoom = false
 
     private var accent: Color { accents.accent(for: room) }
 
@@ -52,6 +53,8 @@ struct RoomDetailView: View {
         .environment(\.roomAccent, accent)
         .task { await accents.load(room) }
         .task(id: hero?.id) { await loadHero() }
+        .task { if RoomSeed.opensIdentity { isCorrectingRoom = true } }
+        .task { if RoomSeed.opensScan { isSeeingScan = true } }
         .fullScreenCover(item: $opened) { picture in
             PictureDetailView(picture: picture, onDelete: { delete(picture) })
         }
@@ -63,6 +66,14 @@ struct RoomDetailView: View {
         }
         .fullScreenCover(isPresented: $isDesigning) {
             DesignFlowView(room: room)
+        }
+        .fullScreenCover(isPresented: $isCorrectingRoom) {
+            RoomIdentityFlow(room: room) {
+                // Designing keeps the screen that asks for it: this hands back
+                // to the room's own Design button rather than spending here.
+                isCorrectingRoom = false
+                Task { @MainActor in isDesigning = true }
+            }
         }
         .fullScreenCover(isPresented: $isWalking) {
             WalkView(room: room)
@@ -80,6 +91,7 @@ struct RoomDetailView: View {
         VStack(spacing: 0) {
             top
             photoStrip
+            RoomIdentityStrip(room: room) { isCorrectingRoom = true }
             counts
             Spacer(minLength: 12)
             actions
