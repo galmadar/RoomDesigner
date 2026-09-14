@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The conditioning render, made draggable.
+/// The render of the scan, made draggable.
 ///
 /// Reaching for the floor plan to change what you are looking at is indirect —
 /// you aim by watching a wedge rather than by watching the picture. Dragging on
@@ -22,18 +22,16 @@ struct ViewfinderView: View {
 
     var body: some View {
         ZStack {
+            Paper.tint
             if let image {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
             } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.secondarySystemBackground))
-                    .frame(height: 200)
-                    .overlay(ProgressView())
+                ProgressView().tint(Paper.mutedInk)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 2)
@@ -55,23 +53,30 @@ struct ViewfinderView: View {
         )
         .overlay(alignment: .bottom) {
             if showsHint && image != nil {
-                Label("Drag to look around", systemImage: "hand.draw")
-                    .font(.caption2)
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding(10)
+                badge { Label("Drag to look around", systemImage: "hand.draw") }
+                    .padding(12)
                     .allowsHitTesting(false)
             }
         }
         .overlay(alignment: .topLeading) {
             if abs(pitch) > 0.01 {
-                Text(pitch > 0 ? "looking up \(degrees)°" : "looking down \(degrees)°")
-                    .font(.caption2.monospacedDigit())
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(.thinMaterial, in: Capsule())
-                    .padding(8)
+                badge {
+                    Text(pitch > 0 ? "looking up \(degrees)°" : "looking down \(degrees)°")
+                        .monospacedDigit()
+                }
+                .padding(10)
             }
         }
+        .accessibilityLabel("The scan seen from where you are standing. Drag to look around.")
+    }
+
+    private func badge<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .font(.system(size: 12))
+            .foregroundStyle(Paper.ink)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Paper.card.opacity(0.92), in: Capsule())
     }
 
     private var degrees: Int { abs(Int(pitch * 180 / .pi)) }
