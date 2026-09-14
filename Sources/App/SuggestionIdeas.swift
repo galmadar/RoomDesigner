@@ -2,30 +2,32 @@ import SwiftUI
 
 /// Ideas for this particular room, as chips under the prompt.
 ///
-/// Fetched once, when asked for. The screen opens often and a network call every
-/// time would buy nothing; and if it fails the box is still a box.
+/// The ideas themselves live in ``RoomIdeas`` rather than in this view, because
+/// what they are ideas *for* can change on a different screen: correcting the
+/// room type throws these away and asks again, and a `@State` here would have
+/// gone on offering kitchen ideas for a guest room.
 struct SuggestionIdeas: View {
     @Binding var text: String
     let room: ScannedRoom
 
     @Environment(\.roomAccent) private var accent
-    @State private var suggestions: [String] = []
-    @State private var isSuggesting = false
-    @State private var suggestionsFailed = false
+    @ObservedObject private var store = RoomIdeas.shared
+
+    private var state: RoomIdeas.State { store.state(for: room) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if suggestions.isEmpty {
+            if state.ideas.isEmpty {
                 Button {
-                    Task { await loadSuggestions() }
+                    Task { await store.load(room, force: state.failed) }
                 } label: {
                     HStack(spacing: 7) {
-                        if isSuggesting {
+                        if state.isLoading {
                             ProgressView().controlSize(.small)
                             Text("Finding ideas…")
                         } else {
                             Image(systemName: "sparkles")
-                            Text(suggestionsFailed ? "Try again" : "Suggest ideas")
+                            Text(state.failed ? "Try again" : "Suggest ideas")
                         }
                     }
                     .font(.system(size: 14))
@@ -35,15 +37,15 @@ struct SuggestionIdeas: View {
                     .background(Paper.tint, in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(isSuggesting || room.capturedRoom == nil)
+                .disabled(state.isLoading || room.capturedRoom == nil)
 
-                if suggestionsFailed {
+                if state.failed {
                     Text("No ideas came back this time. Type your own.")
                         .font(.system(size: 13))
                         .foregroundStyle(Paper.secondaryInk)
                 }
             } else {
-                ForEach(suggestions, id: \.self) { suggestion in
+                ForEach(state.ideas, id: \.self) { suggestion in
                     Button { text = suggestion } label: {
                         Text(suggestion)
                             .font(.system(size: 14))
@@ -58,18 +60,5 @@ struct SuggestionIdeas: View {
                 }
             }
         }
-    }
-
-    private func loadSuggestions() async {
-        guard let captured = room.capturedRoom else { return }
-        isSuggesting = true
-        suggestionsFailed = false
-        defer { isSuggesting = false }
-
-        // Deliberately no alert: a missing suggestion is not an error the user
-        // has to deal with, it just means typing the brief instead.
-        let fetched = (try? await PlanService().suggestions(for: RoomFacts(room: captured))) ?? []
-        suggestions = fetched
-        suggestionsFailed = fetched.isEmpty
     }
 }

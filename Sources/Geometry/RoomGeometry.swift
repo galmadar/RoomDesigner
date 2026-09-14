@@ -16,7 +16,11 @@ enum RoomGeometry {
         var towardsCamera: SIMD3<Float>
     }
 
+    /// `corrections` reaches the scanned objects and nothing else: walls,
+    /// floors, the built ceiling and proposed furniture are untouched by it, so
+    /// a room with no corrections builds the identical mesh it always did.
     static func build(from room: CapturedRoom,
+                      corrections: RoomCorrections = .none,
                       proposals: [Proposal] = [],
                       markers: Markers? = nil,
                       proxies: ProxyMeshLibrary = .boundingBoxes) -> Mesh {
@@ -40,8 +44,15 @@ enum RoomGeometry {
             mesh.append(surface(floor, apertures: [], colour: Palette.floor))
         }
         mesh.append(ceiling(of: room))
-        for object in room.objects {
-            var solid = proxies.mesh(for: object)
+        // Corrected objects, not scanned ones: this is the point at which
+        // "that fridge is a wardrobe, and it is wider than that" stops being a
+        // label and becomes the geometry the picture is drawn around. An object
+        // struck out as never having been there is simply absent here.
+        for object in RoomReading(room: room, corrections: corrections).objects {
+            var solid = proxies.mesh(for: object.scanned,
+                                     category: object.category,
+                                     dimensions: object.dimensions,
+                                     transform: object.transform)
             solid.tint(Palette.scanned)
             mesh.append(solid)
         }
