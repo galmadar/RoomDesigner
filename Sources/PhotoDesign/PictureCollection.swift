@@ -105,6 +105,9 @@ struct PictureThumbnail: View {
 /// One picture full screen, with everything that made it.
 struct PictureDetailView: View {
     let picture: RoomPicture
+    /// Which room it was made for, where the screen it was opened from knows.
+    /// Nil from inside a room, which is already titled with its name.
+    var roomName: String? = nil
     /// Nil where deleting makes no sense, such as straight after making it.
     let onDelete: (() -> Void)?
 
@@ -131,7 +134,9 @@ struct PictureDetailView: View {
                     .padding(16)
                 }
             }
-            .navigationTitle("Picture")
+            // Cutting across rooms, which room this is of is the one thing the
+            // screen cannot otherwise say.
+            .navigationTitle(roomName ?? "Picture")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Paper.sheet, for: .navigationBar)
             .toolbar {

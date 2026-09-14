@@ -45,8 +45,10 @@ struct GalleryView: View {
         // Deleted only once the cover is gone: reading a deleted model's properties traps.
         .fullScreenCover(item: $opened, onDismiss: deleteDoomed) { item in
             switch item {
-            case .design(let picture, _, _):
-                PictureDetailView(picture: picture) { doomed = item; opened = nil }
+            case .design(let picture, let room, _):
+                PictureDetailView(picture: picture, roomName: room.name) {
+                    doomed = item; opened = nil
+                }
             case .photograph(let photo, let room):
                 GalleryPhotoView(photo: photo, room: room) { doomed = item; opened = nil }
             }
