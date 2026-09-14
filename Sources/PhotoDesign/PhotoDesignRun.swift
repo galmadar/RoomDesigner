@@ -58,6 +58,15 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
 
     @Published private(set) var stage: Stage
 
+    /// What a finished run made, kept so a notice can show the picture without
+    /// reaching back into the store for a model that may since have gone.
+    struct Arrival {
+        let thumbnailData: Data?
+        let pictureCreatedAt: Date
+    }
+
+    private(set) var arrival: Arrival?
+
     /// Called whenever the run stops working, however it stopped.
     var onSettled: ((PhotoDesignRun) -> Void)?
 
@@ -244,6 +253,7 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
             context.insert(picture)
             picture.room = room
             try? context.save()
+            arrival = Arrival(thumbnailData: thumbnail, pictureCreatedAt: picture.createdAt)
             stage = .finished
         } catch {
             // An expiry has already said what happened; don't paper over it.

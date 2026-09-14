@@ -31,6 +31,9 @@ final class PictureJobs: ObservableObject {
         remember(job)
         job.onSettled = { [weak self] in self?.settled($0) }
         job.start()
+        // Asked for a picture is the only moment being told about one means
+        // anything; this is first-time-only and harmless if refused.
+        PictureNotices.shared.considerAsking()
     }
 
     func retry(_ job: PhotoDesignRun) {
@@ -38,6 +41,9 @@ final class PictureJobs: ObservableObject {
         remember(job)
         job.onSettled = { [weak self] in self?.settled($0) }
         job.start()
+        // Asked for a picture is the only moment being told about one means
+        // anything; this is first-time-only and harmless if refused.
+        PictureNotices.shared.considerAsking()
     }
 
     func dismiss(_ job: PhotoDesignRun) {
@@ -50,6 +56,7 @@ final class PictureJobs: ObservableObject {
     /// until it is retried or waved away, so a picture never fails out of sight.
     private func settled(_ job: PhotoDesignRun) {
         forget(job.id)
+        PictureNotices.shared.announce(job)
         if case .finished = job.stage { jobs = jobs.filter { $0 !== job } }
     }
 
