@@ -76,10 +76,23 @@ struct PlanBoard: View {
                 .padding(.horizontal, textInset)
                 .padding(.top, 10)
 
+            // The camera's own two controls sit directly under the plan it
+            // stands on, where the cone that widens is; the furniture's below
+            // them.
+            lensControl
+                .padding(.horizontal, textInset)
+                .padding(.top, 14)
+
+            if let eyeHeight {
+                heightControl(eyeHeight)
+                    .padding(.horizontal, textInset)
+                    .padding(.top, 12)
+            }
+
             if let selected = selectedProposal {
                 controls(selected)
                     .padding(.horizontal, textInset)
-                    .padding(.top, 12)
+                    .padding(.top, 16)
             }
 
             tools
@@ -88,16 +101,6 @@ struct PlanBoard: View {
 
             saved
                 .padding(.top, 16)
-
-            lensControl
-                .padding(.horizontal, textInset)
-                .padding(.top, 18)
-
-            if let eyeHeight {
-                heightControl(eyeHeight)
-                    .padding(.horizontal, textInset)
-                    .padding(.top, 14)
-            }
         }
         .task(id: library.map(\.id)) { await thumbnails.load(library) }
         .sheet(isPresented: $isPickingProduct) {
@@ -116,12 +119,12 @@ struct PlanBoard: View {
     }
 
     private var hint: String {
-        var said = ["Drag the dot to move, the small circle to turn. Pinch to zoom, double-tap to fit."]
+        var said = ["Drag the dot to move, the small circle to turn. Pinch to zoom."]
         said.append(room.proposals.isEmpty
-                    ? "Nothing is standing on the plan yet — add a piece, then drag it into place."
-                    : "Drag a piece to move it. Tap it to turn, resize or remove it. The thick edge is its front.")
+                    ? "Nothing on the plan yet — add a piece, then drag it into place."
+                    : "Drag a piece to move it, tap it to turn, resize or remove.")
         if photoSpots.contains(where: { $0 != nil }) {
-            said.append("Tap a numbered square to stand exactly where that photo was taken.")
+            said.append("Tap a numbered square to stand where that photo was taken.")
         }
         return said.joined(separator: " ")
     }
@@ -171,7 +174,7 @@ struct PlanBoard: View {
     /// Add, and the four things that act on the whole plan rather than on one
     /// piece. One row, always in the same place, on every screen the plan is on.
     private var tools: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Menu {
                 Button { isPickingProduct = true } label: {
                     Label("From the library", systemImage: "square.grid.2x2")
@@ -185,8 +188,9 @@ struct PlanBoard: View {
                     Image(systemName: "plus").font(.system(size: 15, weight: .semibold))
                     Text("Add").font(.system(size: 16))
                 }
+                .fixedSize()
                 .foregroundStyle(accent)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 13)
                 .frame(height: 44)
                 .background(Paper.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
@@ -227,7 +231,8 @@ struct PlanBoard: View {
             Text(title)
                 .font(.system(size: 15))
                 .foregroundStyle(tint)
-                .padding(.horizontal, 12)
+                .fixedSize()
+                .padding(.horizontal, 10)
                 .frame(height: 44)
                 .background(Paper.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
