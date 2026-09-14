@@ -14,6 +14,7 @@ struct RoomListView: View {
     @State private var path = NavigationPath()
 
     @ObservedObject private var learned = Learned.shared
+    @EnvironmentObject private var notices: PictureNotices
 
     /// Lets a simulator run open straight to a room:
     ///   xcrun simctl launch <sim> <bundle> --console
@@ -100,11 +101,22 @@ struct RoomListView: View {
                 guard GallerySeed.opensGallery else { return }
                 path.append(GalleryRoute())
             }
+            // Checked on appearing as well as on change: a tap that launched the
+            // app from cold sets this before there is a list to open anything in.
+            // The rooms are watched too, because on that cold launch the intent
+            // arrives before the query has any room to match it against, and
+            // nothing would ever ask a second time.
+            .task { openRoomIfAsked() }
+            .onChange(of: notices.opening) { _, _ in openRoomIfAsked() }
+            .onChange(of: rooms.count) { _, _ in openRoomIfAsked() }
             .fullScreenCover(isPresented: $isScanning) {
                 ScanFlowView { scan in
                     let room = ScannedRoom(name: "Room \(rooms.count + 1)")
                     room.capturedRoom = scan.room
                     room.liveRoomData = scan.liveRoomData
+                    // Only the scan can take a map, and only a room that kept
+                    // one can ever be stood back in later.
+                    room.worldMapData = scan.worldMapData
                     context.insert(room)
                     for shot in scan.shots {
                         let photo = ScanPhoto(shot)
@@ -114,6 +126,15 @@ struct RoomListView: View {
                 }
             }
         }
+    }
+
+    /// Opens the room a tapped notice was about. Left standing when no room
+    /// matches yet, so a query that has not loaded does not lose the intent.
+    private func openRoomIfAsked() {
+        guard let wanted = notices.opening,
+              let room = rooms.first(where: { wanted.matches($0) }) else { return }
+        path.append(room)
+        notices.opening = nil
     }
 
     private var cards: some View {

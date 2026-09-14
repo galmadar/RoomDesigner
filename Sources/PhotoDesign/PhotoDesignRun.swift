@@ -58,6 +58,15 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
 
     @Published private(set) var stage: Stage
 
+    /// What a finished run made, kept so a notice can show the picture without
+    /// reaching back into the store for a model that may since have gone.
+    struct Arrival {
+        let thumbnailData: Data?
+        let pictureCreatedAt: Date
+    }
+
+    private(set) var arrival: Arrival?
+
     /// Called whenever the run stops working, however it stopped.
     var onSettled: ((PhotoDesignRun) -> Void)?
 
@@ -163,8 +172,8 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
         task?.cancel()
         task = nil
         stage = .failed("iOS stopped this while the app was in the background. Try again with the app open.")
-        endAssertion()
         onSettled?(self)
+        endAssertion()
     }
 
     private func beginAssertion() {
@@ -260,6 +269,7 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
             context.insert(picture)
             picture.room = room
             try? context.save()
+            arrival = Arrival(thumbnailData: thumbnail, pictureCreatedAt: picture.createdAt)
             stage = .finished
         } catch {
             // An expiry has already said what happened; don't paper over it.
@@ -268,8 +278,10 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
             }
         }
         task = nil
-        endAssertion()
+        // Settled before the assertion is given up: whatever wants to say this
+        // happened has to say it while the app is still allowed to be awake.
         onSettled?(self)
+        endAssertion()
     }
 
     /// Scan photos and library pictures are well under the cap; this only guards the odd huge one.
