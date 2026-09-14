@@ -114,6 +114,9 @@ struct RoomListView: View {
                     let room = ScannedRoom(name: "Room \(rooms.count + 1)")
                     room.capturedRoom = scan.room
                     room.liveRoomData = scan.liveRoomData
+                    // Only the scan can take a map, and only a room that kept
+                    // one can ever be stood back in later.
+                    room.worldMapData = scan.worldMapData
                     context.insert(room)
                     for shot in scan.shots {
                         let photo = ScanPhoto(shot)
