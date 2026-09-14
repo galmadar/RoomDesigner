@@ -68,12 +68,21 @@ struct PictureCarousel: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Picture. \(picture.prompt)")
         case .photo(let photo):
+            // A photo with no spot says so on its face and offers the way out.
+            // It is not a dead end and it is not a nag: the page reads the same
+            // as any other and the offer only costs a tap if it is wanted.
             Button { onOpen(card) } label: {
-                CarouselPage(data: photo.imageData, title: "Photo of the real room",
-                             caption: "Taken while scanning", markers: [], glyph: "camera")
+                CarouselPage(data: photo.imageData,
+                             title: photo.isPlaced ? "Photo of the real room"
+                                                   : "Photo with no place yet",
+                             caption: photo.caption, markers: [],
+                             glyph: photo.isPlaced ? "camera" : "mappin.slash",
+                             action: photo.isPlaced ? nil : "Place it")
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Photo of the real room")
+            .accessibilityLabel(photo.isPlaced
+                                ? "Photo of the real room"
+                                : "Photo with no place in the room yet. Place it.")
         }
     }
 
@@ -110,6 +119,8 @@ private struct CarouselPage: View {
     let markers: [Marker]
     /// Set for a photo of the real room, so it is not read as a design.
     let glyph: String?
+    /// The one thing this page is still waiting to be told, if anything.
+    var action: String?
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -142,6 +153,14 @@ private struct CarouselPage: View {
                     Text(caption)
                         .font(.system(size: 13))
                         .foregroundStyle(.white.opacity(0.85))
+                    if let action {
+                        Text(action)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.11, green: 0.098, blue: 0.09))
+                            .padding(.horizontal, 10)
+                            .frame(height: 24)
+                            .background(.white.opacity(0.9), in: Capsule())
+                    }
                 }
             }
             .padding(.horizontal, 16)

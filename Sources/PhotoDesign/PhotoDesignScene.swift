@@ -52,6 +52,10 @@ enum PhotoDesignScene {
 
     /// A photo taken within a metre of the camera and pointing within 30° of the
     /// same way still shows the walls and light the picture will; beyond that it misleads.
+    ///
+    /// A photo with no pose is skipped rather than ranked worst. There is no
+    /// distance to measure, and guessing one would send the model a photograph
+    /// of somewhere else labelled as the view it is being asked to draw.
     static func nearestPhoto(to camera: Camera, among photos: [ScanPhoto]) -> ScanPhoto? {
         let forward = simd_normalize(camera.target - camera.eye)
         var best: (photo: ScanPhoto, score: Float)?

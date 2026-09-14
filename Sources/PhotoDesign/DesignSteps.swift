@@ -15,9 +15,26 @@ struct WhereStep: View {
     @StateObject private var inside = InsideRenderer()
     @State private var isAiming = false
     @State private var isAdjusting = false
+    /// A photo with no place in the room, opened to be given one.
+    @State private var placing: ScanPhoto?
     @ObservedObject private var learned = Learned.shared
 
     private var photos: [ScanPhoto] { room.sortedPhotos }
+
+    private var unplacedCount: Int { photos.filter { !$0.isPlaced }.count }
+
+    private var subtitle: String {
+        if photos.isEmpty {
+            return "No photos were taken while this room was scanned, so the picture is drawn from the scan alone."
+        }
+        if unplacedCount == photos.count {
+            return "None of this room's photos knows where it was taken from, so none can frame a picture yet. Give one a place and it works exactly like a photo taken while scanning."
+        }
+        if unplacedCount > 0 {
+            return "Pictures come out best from a spot you photographed while scanning. The dashed ones have no place in the room yet — tap to give them one."
+        }
+        return "Pictures come out best from a spot you photographed while scanning."
+    }
 
     /// The photographed spots are the only part of Design nobody would guess.
     /// With no photos there is nothing to explain, so nothing is said.
@@ -29,9 +46,7 @@ struct WhereStep: View {
                 VStack(alignment: .leading, spacing: 0) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Where are you\nstanding?").question()
-                        Text(photos.isEmpty
-                             ? "No photos were taken while this room was scanned, so the picture is drawn from the scan alone."
-                             : "Pictures come out best from a spot you photographed while scanning.")
+                        Text(subtitle)
                             .font(.system(size: 14))
                             .foregroundStyle(Paper.secondaryInk)
                             .fixedSize(horizontal: false, vertical: true)
@@ -101,6 +116,7 @@ struct WhereStep: View {
                               inside: inside, isAiming: $isAiming)
             }
         }
+        .fullScreenCover(item: $placing) { PhotoPlaceFlow(room: room, photo: $0) }
     }
 
     /// Sits under the photos rather than over them: a card must never cover the
@@ -171,7 +187,49 @@ struct WhereStep: View {
 
     private var plan: FloorPlan? { room.capturedRoom.map { FloorPlan(room: $0) } }
 
-    private func spot(_ index: Int) -> some View {
+    @ViewBuilder private func spot(_ index: Int) -> some View {
+        if photos[index].isPlaced { placedSpot(index) } else { unplacedSpot(index) }
+    }
+
+    /// Shown, dashed, and not choosable.
+    ///
+    /// It is in the grid because it is a photo of this room and hiding it would
+    /// be a lie, and because the numbering has to match the plan's spots and the
+    /// photo grid. It cannot be chosen because there is no camera behind it: a
+    /// picture "from" it would be framed from somewhere it was never taken, and
+    /// the photograph would go up as the reference for a view it does not show.
+    private func unplacedSpot(_ index: Int) -> some View {
+        Button { placing = photos[index] } label: {
+            VStack(alignment: .leading, spacing: 7) {
+                ZStack(alignment: .topTrailing) {
+                    FilledImage(image: photos[index].thumbnail)
+                        .frame(height: 186)
+                        .frame(maxWidth: .infinity)
+                        .opacity(0.5)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(Paper.outline,
+                                              style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                        }
+
+                    Image(systemName: "mappin.slash")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(Color.black.opacity(0.55), in: Circle())
+                        .padding(9)
+                }
+                Text("Photo \(index + 1) — place it")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Paper.secondaryInk)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Photo \(index + 1), with no place in the room. Place it.")
+    }
+
+    private func placedSpot(_ index: Int) -> some View {
         let selected = draft.angle == .photo(index)
         return Button { draft.angle = .photo(index) } label: {
             VStack(alignment: .leading, spacing: 7) {

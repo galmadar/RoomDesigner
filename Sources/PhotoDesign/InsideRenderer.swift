@@ -24,19 +24,19 @@ final class InsideRenderer: ObservableObject {
     private var isRendering = false
     private var pending: Job?
 
-    /// Everything the free camera is, rather than a position and three
-    /// constants: the mini screen moves all of it, and the preview has to be
-    /// the shot that would be sent.
+    /// The shot itself rather than a camera's ingredients: the free camera is
+    /// one way of arriving at one, and a photo being placed is another, and
+    /// both want the same supersede-don't-queue behaviour underneath.
     private struct Job {
-        var position: SIMD2<Float>
-        var yaw: Float
-        var pitch: Float
-        var eyeHeight: Float
-        var fieldOfView: Float
+        var shot: Shot
         var size: Int
     }
 
     var isLoaded: Bool { bounds != nil }
+
+    /// The measured extent of the loaded mesh, for callers that place their own
+    /// camera in it rather than handing in a spot to be clamped.
+    var measured: (min: SIMD3<Float>, max: SIMD3<Float>)? { bounds }
 
     func load(_ mesh: Mesh) {
         guard !mesh.isEmpty else { return }
@@ -46,26 +46,30 @@ final class InsideRenderer: ObservableObject {
 
     func request(position: SIMD2<Float>, yaw: Float, pitch: Float, eyeHeight: Float,
                  fieldOfView: Float, draft: Bool) {
-        pending = Job(position: position, yaw: yaw, pitch: pitch, eyeHeight: eyeHeight,
-                      fieldOfView: fieldOfView,
-                      size: draft ? Self.draftSize : Self.finalSize)
+        guard let bounds else { return }
+        let camera = Camera.standing(at: position, in: bounds, eyeHeight: eyeHeight,
+                                     yaw: yaw, pitch: pitch, fieldOfView: fieldOfView)
+        // Cropped by the shot itself, so the preview and the render that gets
+        // sent frame the same thing.
+        request(PhotoDesignScene.freeShot(camera), draft: draft)
+    }
+
+    /// A shot built elsewhere — a photo's own camera and crop — so the render
+    /// covers exactly what the photograph covers and the two can be crossed.
+    func request(_ shot: Shot, draft: Bool) {
+        pending = Job(shot: shot, size: draft ? Self.draftSize : Self.finalSize)
         pump()
     }
 
     /// Renders the newest request and drops everything queued behind it.
     private func pump() {
-        guard !isRendering, let job = pending, let mesh, let bounds else { return }
+        guard !isRendering, let job = pending, let mesh else { return }
         pending = nil
         isRendering = true
 
         Task {
-            let camera = Camera.standing(at: job.position, in: bounds,
-                                         eyeHeight: job.eyeHeight, yaw: job.yaw,
-                                         pitch: job.pitch, fieldOfView: job.fieldOfView)
-            // Cropped by the shot itself, so the preview and the render that
-            // gets sent frame the same thing.
-            let rendered = await ShotRenderer.shared.image(
-                of: mesh, shot: PhotoDesignScene.freeShot(camera), size: job.size)
+            let rendered = await ShotRenderer.shared.image(of: mesh, shot: job.shot,
+                                                           size: job.size)
             if let rendered { image = rendered }
             isRendering = false
             pump()
