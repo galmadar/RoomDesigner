@@ -1,3 +1,4 @@
+import ARKit
 import Foundation
 import RoomPlan
 import SwiftData
@@ -41,6 +42,15 @@ final class ScannedRoom {
     /// The last live room RoomPlan reported before processing, in the AR
     /// session's own frame — kept to check photo poses against the final room.
     var liveRoomData: Data?
+
+    /// An archived `ARWorldMap` from the session this room was scanned in.
+    ///
+    /// It is what lets a later session be stood back in the same coordinates,
+    /// which is the only way an uploaded photo can be given a measured position
+    /// instead of a judged one. A map can only be taken while scanning, so a
+    /// room scanned before this was kept has none and never will — see
+    /// ``RoomWorldMap``.
+    @Attribute(.externalStorage) var worldMapData: Data?
 
     /// What the user has said the scan got wrong. Encoded rather than related,
     /// for the same reason as proposals: a small value owned by this room, and
@@ -97,6 +107,15 @@ final class ScannedRoom {
     var sortedPhotos: [ScanPhoto] {
         (photos ?? []).sorted { $0.takenAt < $1.takenAt }
     }
+
+    /// Photos that know where they were taken from — the only ones a spot, a
+    /// cross-fade or a reference image may ever be taken from.
+    var placedPhotos: [ScanPhoto] { sortedPhotos.filter(\.isPlaced) }
+
+    /// Whether an uploaded photo can be placed by standing in the room again.
+    /// False for every room scanned before the world map was kept, and nothing
+    /// done later can make it true.
+    var canRelocalise: Bool { worldMapData != nil }
 
     var sortedPictures: [GeneratedPicture] {
         (pictures ?? []).sorted { $0.createdAt > $1.createdAt }

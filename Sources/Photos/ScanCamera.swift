@@ -50,6 +50,26 @@ final class ScanCamera: ObservableObject {
 
     var liveRoomData: Data? { liveRoom.latest.flatMap { try? JSONEncoder().encode($0) } }
 
+    /// The AR session's own map of the room, archived — what lets a later
+    /// session be stood back in these coordinates, and so the only way a photo
+    /// that was not taken during this scan can ever have a measured position.
+    ///
+    /// Taken while the session is still running: stopping the capture pauses it
+    /// underneath. Apple documents `getCurrentWorldMap` as providing a map "only
+    /// when running an ARWorldTrackingConfiguration", and RoomPlan does not say
+    /// which configuration it runs, so nil is an ordinary answer here and every
+    /// path that wants a map copes with not getting one.
+    func worldMapData() async -> Data? {
+        guard let session = view?.captureSession.arSession else { return nil }
+        // The completion runs on the session's own delegate queue, so archiving
+        // megabytes of feature points never touches the main thread.
+        return await withCheckedContinuation { continuation in
+            session.getCurrentWorldMap { map, _ in
+                continuation.resume(returning: map.flatMap(RoomWorldMap.archived))
+            }
+        }
+    }
+
     /// Everything is copied out before this returns: ARKit stops delivering
     /// frames while old ones are still held.
     private static func take(from view: RoomCaptureView)
