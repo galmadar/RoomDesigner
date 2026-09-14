@@ -25,6 +25,10 @@ struct ScanView: View {
     @State private var isDragging = false
     @State private var snap: PhotoSnap?
     @State private var photoPreview: UIImage?
+    /// The floor's own outline, which is what "inside the room" means here.
+    @State private var floor: RoomFloor?
+
+    private static let wallMargin: Float = 0.3
 
     private var accent: Color { accents.accent(for: room) }
 
@@ -44,6 +48,7 @@ struct ScanView: View {
         .environment(\.roomAccent, accent)
         .task { await accents.load(room) }
         .task { prepare() }
+        .task { if let metres = RoomSeed.planStep { step(metres) } }
         .task(id: photoPreviewKey) { await renderPhotoPreview() }
         .onChange(of: position) { render() }
         .onChange(of: yaw) { render() }
@@ -184,10 +189,18 @@ struct ScanView: View {
 
     /// Steps along the way the camera is facing, so Back and Closer mean what
     /// you are looking at, not a compass direction.
+    ///
+    /// Stopped at the wall rather than at the bounding box, which a room scanned
+    /// at an angle overhangs — walking out through one is the other way to end
+    /// up looking at the back of the room, and a black frame.
     private func step(_ metres: Float) {
-        guard let bounds = previews.bounds else { return }
         let heading = SIMD2(sin(yaw), -cos(yaw))
-        position = Camera.clamp(position + heading * metres, in: bounds)
+        let stepped = position + heading * metres
+        if let floor {
+            position = floor.keepInside(stepped, margin: Self.wallMargin)
+        } else if let bounds = previews.bounds {
+            position = Camera.clamp(stepped, in: bounds)
+        }
     }
 
     // MARK: - Photo spots
@@ -259,7 +272,12 @@ struct ScanView: View {
         let centre = Camera.centre(of: bounds)
         let corner = SIMD2(bounds.min.x + (bounds.max.x - bounds.min.x) * 0.18,
                            bounds.min.z + (bounds.max.z - bounds.min.z) * 0.18)
-        position = Camera.clamp(corner, in: bounds)
+        let inside = RoomFloor(room: captured)
+        floor = inside
+        // 18% into the box is outside the walls of a room scanned at an angle,
+        // which would open this screen on a black frame.
+        position = inside?.keepInside(corner, margin: Self.wallMargin)
+            ?? Camera.clamp(corner, in: bounds)
         let toCentre = centre - position
         yaw = atan2(toCentre.x, -toCentre.y)
         pitch = -8 * .pi / 180

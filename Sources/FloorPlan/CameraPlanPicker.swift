@@ -10,8 +10,13 @@ import simd
 /// two screens that each knew half the instrument. The grab is decided by what
 /// is under the finger instead: the camera's own two handles win inside their
 /// small reach, a piece of furniture wins where it is drawn, and bare floor
-/// moves the camera the way it always did. Which was grabbed is settled once
-/// per drag, so a fast finger cannot slip from one to the other halfway.
+/// moves the map. Which was grabbed is settled once per drag, so a fast finger
+/// cannot slip from one to the other halfway.
+///
+/// Bare floor used to teleport the camera. It is the map now because a drag on
+/// nothing in particular means "move the map" on every map anyone has used, and
+/// because the camera has a dot of its own to be dragged by — which is what the
+/// hint under the plan has always said to do.
 struct CameraPlanPicker: View {
     let plan: FloorPlan
 
@@ -50,10 +55,15 @@ struct CameraPlanPicker: View {
     var onPickSpot: (Int) -> Void = { _ in }
 
     @State private var grabbed: Grab?
-    @State private var zoom: CGFloat = 1
-    @State private var zoomAnchor: CGFloat = 1
+    // Opening values so a simulator run can be zoomed or panned without a
+    // finger; 1 and zero in a release build, where `RoomSeed` answers nothing.
+    @State private var zoom: CGFloat = RoomSeed.planZoom ?? 1
+    @State private var zoomAnchor: CGFloat = RoomSeed.planZoom ?? 1
+    /// Where the map has been slid to, and where it stood when this drag began.
+    @State private var pan: CGSize = RoomSeed.planPan ?? .zero
+    @State private var panStart: CGSize = .zero
 
-    private enum Grab: Equatable { case body, direction, proposal(Proposal.ID), nothing }
+    private enum Grab: Equatable { case body, direction, proposal(Proposal.ID), map }
 
     private var coneLength: Float { 2.2 }
 
@@ -64,17 +74,11 @@ struct CameraPlanPicker: View {
     private let bodyReach: CGFloat = 30
     private let handleReach: CGFloat = 44
 
-    /// What stays pinned to the centre while zoomed: the piece being edited, or
-    /// otherwise where you are standing.
-    private var focus: SIMD2<Float> {
-        if let id = selection, let selected = proposals.first(where: { $0.id == id }) {
-            return selected.position
-        }
-        return position
-    }
-
-    private func projection(for size: CGSize) -> PlanProjection? {
-        PlanProjection(plan: plan, size: size, zoom: zoom, focus: focus)
+    /// The zoom and the pan are the map's own, never taken from what is
+    /// selected or from where the camera stands — so nothing that is dragged
+    /// can move the ground it is being dragged across.
+    private func projection(for size: CGSize, zoom: CGFloat? = nil) -> PlanProjection? {
+        PlanProjection(plan: plan, size: size, zoom: zoom ?? self.zoom, pan: pan)
     }
 
     var body: some View {
@@ -94,7 +98,7 @@ struct CameraPlanPicker: View {
                     .onChanged { value in
                         guard let projection = projection(for: geometry.size) else { return }
                         isDragging = true
-                        update(with: value.location, projection: projection)
+                        update(with: value, projection: projection)
                     }
                     .onEnded { _ in
                         grabbed = nil
@@ -102,14 +106,23 @@ struct CameraPlanPicker: View {
                     }
             )
             .simultaneousGesture(
+                // About the point between the fingers, so the room does not slide
+                // away from under the pinch that is meant to be examining it.
                 MagnifyGesture()
                     .onChanged { value in
-                        zoom = min(max(zoomAnchor * value.magnification, 1), 8)
+                        let scaled = min(max(zoomAnchor * value.magnification, 1), 8)
+                        guard let now = projection(for: geometry.size),
+                              let next = projection(for: geometry.size, zoom: scaled) else { return }
+                        let moved = now.pan(zoomingTo: scaled, about: value.startLocation)
+                        zoom = scaled
+                        pan = next.clamped(moved)
                     }
                     .onEnded { _ in zoomAnchor = zoom }
             )
             .onTapGesture(count: 2) {
-                withAnimation(.easeOut(duration: 0.2)) { zoom = 1; zoomAnchor = 1 }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    zoom = 1; zoomAnchor = 1; pan = .zero
+                }
             }
             .overlay(alignment: .topTrailing) {
                 if zoom > 1.01 {
@@ -144,10 +157,14 @@ struct CameraPlanPicker: View {
     private func direction() -> SIMD2<Float> { SIMD2(sin(yaw), -cos(yaw)) }
     private func handlePosition() -> SIMD2<Float> { position + direction() * coneLength }
 
-    private func update(with location: CGPoint, projection: PlanProjection) {
+    private func update(with value: DragGesture.Value, projection: PlanProjection) {
         // Decide once per drag what was grabbed, so a fast finger cannot slip
         // from turning the camera to dragging a chair halfway through.
-        if grabbed == nil { grabbed = grab(at: location, projection: projection) }
+        if grabbed == nil {
+            grabbed = grab(at: value.startLocation, projection: projection)
+            panStart = pan
+        }
+        let location = value.location
 
         switch grabbed {
         case .direction:
@@ -165,7 +182,13 @@ struct CameraPlanPicker: View {
         case .body:
             position = projection.position(location)
 
-        case .nothing, nil:
+        case .map:
+            // Against where the map stood when the finger landed, so the pan
+            // cannot accumulate on itself the way the old focus did.
+            pan = projection.clamped(CGSize(width: panStart.width + value.translation.width,
+                                            height: panStart.height + value.translation.height))
+
+        case nil:
             break
         }
     }
@@ -188,7 +211,7 @@ struct CameraPlanPicker: View {
         }
 
         selection = nil
-        return showsCamera ? .body : .nothing
+        return .map
     }
 
     private func contains(_ proposal: Proposal, _ location: CGPoint,

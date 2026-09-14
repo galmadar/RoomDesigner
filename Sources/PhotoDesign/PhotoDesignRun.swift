@@ -102,6 +102,22 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
         self.context = context
     }
 
+#if DEBUG
+    /// A run that is never started, so the page a picture is made on can be
+    /// seen on a simulator. It has no order, so nothing is ever sent anywhere.
+    init(standingIn room: ScannedRoom, prompt: String) {
+        startedAt = .now
+        roomID = room.persistentModelID
+        roomName = room.name
+        roomCreatedAt = room.createdAt
+        self.prompt = prompt
+        stage = .designing(since: .now)
+        order = nil
+        self.room = nil
+        context = nil
+    }
+#endif
+
     /// A run a previous launch left in flight, rebuilt only so it can be shown
     /// as lost rather than silently disappearing.
     init(lost: PictureJobs.Unfinished) {
