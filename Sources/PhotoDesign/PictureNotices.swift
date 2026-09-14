@@ -127,10 +127,12 @@ final class PictureNotices: ObservableObject {
             content.attachments = [attachment]
         }
 
-        // No trigger: delivered now, which is when it happened.
+        // No trigger: delivered now, which is when it happened. Filed on this
+        // thread rather than from a task — the run has just given up the
+        // assertion keeping the app awake, and a task may never get to run.
         let request = UNNotificationRequest(identifier: job.id.uuidString,
                                             content: content, trigger: nil)
-        Task { try? await centre.add(request) }
+        centre.add(request, withCompletionHandler: nil)
     }
 
     /// The picture itself, written where the system can take it. It moves the

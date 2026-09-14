@@ -156,8 +156,8 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
         task?.cancel()
         task = nil
         stage = .failed("iOS stopped this while the app was in the background. Try again with the app open.")
-        endAssertion()
         onSettled?(self)
+        endAssertion()
     }
 
     private func beginAssertion() {
@@ -262,8 +262,10 @@ final class PhotoDesignRun: ObservableObject, Identifiable {
             }
         }
         task = nil
-        endAssertion()
+        // Settled before the assertion is given up: whatever wants to say this
+        // happened has to say it while the app is still allowed to be awake.
         onSettled?(self)
+        endAssertion()
     }
 
     /// Scan photos and library pictures are well under the cap; this only guards the odd huge one.
