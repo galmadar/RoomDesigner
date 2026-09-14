@@ -43,6 +43,7 @@ struct RoomListView: View {
             .toolbarBackground(Paper.sheet, for: .navigationBar)
             .navigationDestination(for: ScannedRoom.self) { RoomDetailView(room: $0) }
             .navigationDestination(for: LibraryRoute.self) { _ in LibraryView() }
+            .navigationDestination(for: GalleryRoute.self) { _ in GalleryView() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Menu {
@@ -56,6 +57,14 @@ struct RoomListView: View {
                         Image(systemName: "gearshape").foregroundStyle(Paper.ink)
                     }
                     .accessibilityLabel("Settings and how this works")
+                }
+                // Pictures live inside the room they were made for; this is the
+                // only place they are ever seen together.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { path.append(GalleryRoute()) } label: {
+                        Image(systemName: "photo.stack").foregroundStyle(Paper.ink)
+                    }
+                    .accessibilityLabel("Gallery")
                 }
                 // Always shown: the library doesn't depend on having a room yet.
                 ToolbarItem(placement: .topBarTrailing) {
@@ -85,6 +94,11 @@ struct RoomListView: View {
                 guard let wanted = roomToOpenOnLaunch,
                       let room = rooms.first(where: { $0.name == wanted }) else { return }
                 path.append(room)
+            }
+            .task { GallerySeed.installIfAsked(into: context) }
+            .task {
+                guard GallerySeed.opensGallery else { return }
+                path.append(GalleryRoute())
             }
             .fullScreenCover(isPresented: $isScanning) {
                 ScanFlowView { scan in
