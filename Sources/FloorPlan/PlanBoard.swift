@@ -42,6 +42,7 @@ struct PlanBoard: View {
     @StateObject private var thumbnails = ProductThumbnails()
 
     @State private var selection: Proposal.ID?
+    @State private var floor: RoomFloor?
     @State private var undoStack: [[Proposal]] = []
     @State private var redoStack: [[Proposal]] = []
     @State private var isPickingProduct = false
@@ -56,7 +57,7 @@ struct PlanBoard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             CameraPlanPicker(plan: plan,
-                             position: $position, yaw: $yaw,
+                             position: standing, yaw: $yaw,
                              isDragging: $isDragging, fieldOfView: $fieldOfView,
                              proposals: proposalsBinding, selection: $selection,
                              onBeginEdit: { checkpoint() },
@@ -103,6 +104,7 @@ struct PlanBoard: View {
                 .padding(.top, 16)
         }
         .task(id: library.map(\.id)) { await thumbnails.load(library) }
+        .task { if floor == nil { floor = room.capturedRoom.flatMap { RoomFloor(room: $0) } } }
         .sheet(isPresented: $isPickingProduct) {
             LibraryPicker(title: "Add from library",
                           footnote: "It lands in the middle of the room at its kind's usual size. Things with no floor shape, like a painting, go into a picture without being placed.",
@@ -118,8 +120,18 @@ struct PlanBoard: View {
         }
     }
 
+    /// The camera is held inside the floor's own outline, not inside the
+    /// bounding box: a room scanned at an angle overhangs its box, and a spot
+    /// out there looks at the back of a wall, which renders as a black frame.
+    private var standing: Binding<SIMD2<Float>> {
+        Binding(get: { position },
+                set: { position = floor?.keepInside($0, margin: Self.wallMargin) ?? $0 })
+    }
+
+    private static let wallMargin: Float = 0.3
+
     private var hint: String {
-        var said = ["Drag the dot to move, the small circle to turn. Pinch to zoom."]
+        var said = ["Drag the dot to move, the small circle to turn. Pinch to zoom, drag the floor to move the map, double-tap to fit."]
         said.append(room.proposals.isEmpty
                     ? "Nothing on the plan yet — add a piece, then drag it into place."
                     : "Drag a piece to move it, tap it to turn, resize or remove.")
