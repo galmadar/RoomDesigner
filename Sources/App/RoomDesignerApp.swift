@@ -16,6 +16,7 @@ struct RoomDesignerApp: App {
                 // is cleared here rather than left spinning forever.
                 .task { PictureJobs.shared.recoverLost() }
                 .modifier(RoomSeeding())
+                .modifier(PictureNoticeDrill())
                 .modifier(PictureNoticing())
                 .environmentObject(PictureNotices.shared)
         }
