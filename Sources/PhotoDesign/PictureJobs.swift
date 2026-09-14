@@ -53,6 +53,16 @@ final class PictureJobs: ObservableObject {
         if case .finished = job.stage { jobs = jobs.filter { $0 !== job } }
     }
 
+#if DEBUG
+    /// A picture being made that is never made, so the room screen can be driven
+    /// on a simulator. Never started, and never remembered on disk.
+    func showStandIn(for room: ScannedRoom, prompt: String) {
+        let id = room.persistentModelID
+        guard !jobs.contains(where: { $0.roomID == id }) else { return }
+        jobs.insert(PhotoDesignRun(standingIn: room, prompt: prompt), at: 0)
+    }
+#endif
+
     // MARK: - Surviving a cold launch
 
     /// What is kept on disk about a run in flight: enough to say which room lost

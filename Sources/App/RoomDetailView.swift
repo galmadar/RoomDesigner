@@ -1,16 +1,19 @@
 import SwiftData
 import SwiftUI
 
-/// One room: the newest picture of it, the photos it was scanned with, and the
-/// one thing worth doing next.
+/// One room: everything it has to show in a single swipeable run — pictures
+/// being made, pictures made, then the photos of the room as it really is —
+/// and the one thing worth doing next.
 struct RoomDetailView: View {
     @Bindable var room: ScannedRoom
 
     @ObservedObject private var accents = RoomAccents.shared
     @ObservedObject private var jobs = PictureJobs.shared
 
-    @State private var heroImage: UIImage?
     @State private var opened: RoomPicture?
+    @State private var openedPhoto: ScanPhoto?
+    /// The card on show, by id rather than index: cards come and go under it.
+    @State private var page = ""
     @State private var isShowingGallery = false
     @State private var isShowingPhotos = false
     @State private var isDesigning = false
@@ -55,11 +58,18 @@ struct RoomDetailView: View {
         .tint(accent)
         .environment(\.roomAccent, accent)
         .task { await accents.load(room) }
-        .task(id: hero?.id) { await loadHero() }
         .task { if RoomSeed.opensIdentity { isCorrectingRoom = true } }
         .task { if RoomSeed.opensScan { isSeeingScan = true } }
+#if DEBUG
+        .task {
+            if let index = DemoContents.page, cards.indices.contains(index) { page = cards[index].id }
+        }
+#endif
         .fullScreenCover(item: $opened) { picture in
             PictureDetailView(picture: picture, onDelete: { delete(picture) })
+        }
+        .fullScreenCover(item: $openedPhoto) { photo in
+            PhotoAlignmentView(photo: photo, room: room)
         }
         .fullScreenCover(isPresented: $isShowingGallery) {
             PictureGalleryView(room: room)
@@ -92,7 +102,6 @@ struct RoomDetailView: View {
     private var content: some View {
         VStack(spacing: 0) {
             top
-            photoStrip
             RoomIdentityStrip(room: room) { isCorrectingRoom = true }
             counts
             Spacer(minLength: 12)
@@ -108,7 +117,7 @@ struct RoomDetailView: View {
         }
     }
 
-    // MARK: - The newest picture
+    // MARK: - What the room has to show
 
     /// Newest first, with the pictures the retired one-shot flow left behind
     /// after them, so an old room still shows what it has.
@@ -117,64 +126,32 @@ struct RoomDetailView: View {
             + room.conceptImages.enumerated().reversed().map { RoomPicture.concept(index: $0, data: $1) }
     }
 
-    private var hero: RoomPicture? { pictures.first }
-
     /// Pictures of this room still being made, newest first.
     private var roomJobs: [PhotoDesignRun] { jobs.jobs(for: room) }
 
-    /// A picture on its way is the newest thing about the room, so it takes the
-    /// top of the screen until it arrives or fails.
+    /// Everything the room has, in the order it earned: what is being made,
+    /// what has been made, then what the room actually looks like.
+    private var cards: [RoomPage] {
+        roomJobs.map { RoomPage.making($0) }
+            + pictures.map { RoomPage.picture($0) }
+            + room.sortedPhotos.map { RoomPage.photo($0) }
+    }
+
     @ViewBuilder private var top: some View {
-        if let job = roomJobs.first {
-            MakingPictureHero(job: job)
-        } else if let hero {
-            heroCard(hero)
-        } else {
+        if cards.isEmpty {
             emptyHero
+        } else {
+            PictureCarousel(cards: cards, selection: $page, onOpen: open)
         }
     }
 
-    private func heroCard(_ picture: RoomPicture) -> AnyView {
-        AnyView(
-            Button { opened = picture } label: {
-                ZStack(alignment: .bottomLeading) {
-                    FilledImage(image: heroImage)
-                        .frame(height: 430)
-                        .frame(maxWidth: .infinity)
-
-                    LinearGradient(colors: [Color(red: 0.11, green: 0.098, blue: 0.09).opacity(0.72),
-                                            .clear],
-                                   startPoint: .bottom, endPoint: .top)
-                        .frame(height: 130)
-                        .frame(maxWidth: .infinity)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(picture.prompt)
-                            .font(.system(size: 20, weight: .semibold))
-                            .tracking(-0.4)
-                            .foregroundStyle(.white)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                        HStack(spacing: 8) {
-                            ForEach(Array(picture.markers.enumerated()), id: \.offset) { _, marker in
-                                MarkerDot(marker: marker, size: 9)
-                            }
-                            Text(picture.caption)
-                                .font(.system(size: 13))
-                                .foregroundStyle(.white.opacity(0.85))
-                        }
-                    }
-                    .padding(.leading, 16)
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 14)
-                }
-                .frame(height: 430)
-                .frame(maxWidth: .infinity)
-                .clipped()
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Newest picture. \(picture.prompt)")
-        )
+    /// A page opens whatever it already opened from its own screen.
+    private func open(_ card: RoomPage) {
+        switch card {
+        case .picture(let picture): opened = picture
+        case .photo(let photo): openedPhoto = photo
+        case .making: break
+        }
     }
 
     private var emptyHero: some View {
@@ -194,13 +171,6 @@ struct RoomDetailView: View {
         .background(Paper.tint)
     }
 
-    private func loadHero() async {
-        guard let data = hero?.fullData else { return heroImage = nil }
-        heroImage = await Task.detached(priority: .userInitiated) {
-            LibraryImage.thumbnail(from: data, maxPixelSize: 1400)
-        }.value
-    }
-
     private func delete(_ picture: RoomPicture) {
         opened = nil
         switch picture {
@@ -216,63 +186,19 @@ struct RoomDetailView: View {
         }
     }
 
-    // MARK: - Photos of the real room
+    // MARK: - What is in the carousel
 
-    private var photoStrip: some View {
-        let photos = room.sortedPhotos
-        return HStack(spacing: 10) {
-            if let first = photos.first {
-                photoTile(first)
-                if photos.count > 1 {
-                    Button { isShowingPhotos = true } label: {
-                        Text("+\(photos.count - 1) more")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Paper.mutedInk)
-                            .frame(width: 108, height: 84)
-                            .background(Paper.deepTint,
-                                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Button { isShowingPhotos = true } label: {
-                VStack(spacing: 5) {
-                    Image(systemName: "camera").font(.system(size: 19, weight: .light))
-                    Text(photos.isEmpty ? "No photos" : "Photos").font(.system(size: 12))
-                }
-                .foregroundStyle(Paper.mutedInk)
-                .frame(maxWidth: .infinity)
-                .frame(height: 84)
-                .background(Paper.tint,
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(photos.isEmpty)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-    }
-
-    private func photoTile(_ photo: ScanPhoto) -> some View {
-        Button { isShowingPhotos = true } label: {
-            FilledImage(image: photo.thumbnail)
-                .frame(width: 108, height: 84)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Photos of the room")
-    }
-
+    /// A caption, not a control. The thumbnail row and its "+1 more" stood here
+    /// to reach photos the top of the screen could not show; the carousel shows
+    /// them, and the grid is still in the menu, so this says what is there and
+    /// no longer hides a second way to it.
     private var counts: some View {
-        Button { if !pictures.isEmpty || !roomJobs.isEmpty { isShowingGallery = true } } label: {
-            Text(countsText)
-                .font(.system(size: 13))
-                .foregroundStyle(Paper.secondaryInk)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .buttonStyle(.plain)
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
+        Text(countsText)
+            .font(.system(size: 13))
+            .foregroundStyle(Paper.secondaryInk)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
     }
 
     private var countsText: String {

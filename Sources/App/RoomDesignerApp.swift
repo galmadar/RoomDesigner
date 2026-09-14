@@ -10,6 +10,9 @@ struct RoomDesignerApp: App {
                 // is cleared here rather than left spinning forever.
                 .task { PictureJobs.shared.recoverLost() }
                 .modifier(RoomSeeding())
+#if DEBUG
+                .modifier(DemoSeeding())
+#endif
         }
         .modelContainer(for: [ScannedRoom.self, LibraryObject.self, GeneratedPicture.self])
     }
