@@ -449,15 +449,9 @@ private struct LensDial: View {
 
     @Environment(\.roomAccent) private var accent
 
-    private var degrees: Int { Int((fieldOfView * 180 / .pi).rounded()) }
+    private var degrees: Int { Lens.degrees(fieldOfView) }
 
-    private var words: String {
-        let angle = fieldOfView * 180 / .pi
-        if angle < 60 { return "tight, picks out one corner" }
-        if angle < 76 { return "natural, like your eyes" }
-        if angle < 92 { return "wide, more of the room at once" }
-        return "very wide, the edges stretch"
-    }
+    private var words: String { Lens.walk.words(fieldOfView) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {

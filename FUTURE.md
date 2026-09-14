@@ -80,11 +80,11 @@ the compose request (line 91). The same mesh is also what you walk through
 (`Sources/FloorPlan/FloorPlan.swift:32`). So a half-width closet is half-width
 in every generated picture of that wall, and no prompt can argue with it.
 
-The editing gestures already exist. `LayoutView` lets you drag a piece, and its
-controls turn, resize and remove it (`Sources/FloorPlan/LayoutView.swift:310`
-onwards) — but every one of those mutates `room.proposals`, the furniture the
-user placed. Scanned objects are not in that array, are not selectable, and have
-nowhere for an edit to be written.
+The editing gestures already exist. `PlanBoard` lets you drag a piece, and its
+controls turn, resize and remove it (`Sources/FloorPlan/PlanBoard.swift`,
+`turn`/`resize`/`remove`) — but every one of those mutates `room.proposals`, the
+furniture the user placed. Scanned objects are not in that array, are not
+selectable, and have nowhere for an edit to be written.
 
 Fixing it means an overlay of corrections stored on the room — a size and a
 transform per scanned object, keyed by object identifier — applied wherever the

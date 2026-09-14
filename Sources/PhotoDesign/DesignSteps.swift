@@ -14,6 +14,7 @@ struct WhereStep: View {
     /// Built once for this step and kept: renderer, mesh and measured bounds.
     @StateObject private var inside = InsideRenderer()
     @State private var isAiming = false
+    @State private var isAdjusting = false
     @ObservedObject private var learned = Learned.shared
 
     private var photos: [ScanPhoto] { room.sortedPhotos }
@@ -51,24 +52,24 @@ struct WhereStep: View {
                         .padding(.horizontal, 20)
                         .padding(.top, photos.isEmpty ? 0 : 18)
 
-                    if draft.angle == .free, let plan = plan {
+                    if draft.angle == .free {
                         InsideView(image: inside.image)
                             .padding(.horizontal, 20)
                             .padding(.top, 14)
 
-                        StandingPicker(plan: plan, position: $draft.freePosition, yaw: $draft.freeYaw,
-                                       isDragging: $isAiming,
-                                       proposals: room.proposals, photoSpots: photos.map(\.planSpot))
-                            .frame(height: 190)
-                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .padding(.horizontal, 20)
-                            .padding(.top, 10)
-                        Text("Drag the dot to move. Drag the small circle to turn. The view above follows.")
+                        Text("Lens \(Lens.degrees(draft.freeFieldOfView))° — \(Lens.shot.words(draft.freeFieldOfView)).")
                             .font(.system(size: 13))
                             .foregroundStyle(Paper.secondaryInk)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 20)
                             .padding(.top, 8)
+
+                        Button { isAdjusting = true } label: {
+                            Label("Move the camera", systemImage: "move.3d")
+                        }
+                        .buttonStyle(QuietButtonStyle())
+                        .padding(.horizontal, 20)
+                        .padding(.top, 10)
                     }
                 }
                 .padding(.bottom, 16)
@@ -82,12 +83,24 @@ struct WhereStep: View {
         }
         .overlay(alignment: .bottom) { lesson }
         // Driven from here rather than from the plan: the plan publishes where
-        // the camera is, never when the picture of it is out of date.
+        // the camera is, never when the picture of it is out of date. It stays
+        // here now that the plan is on a sheet, so the frame behind the sheet
+        // is already right when the sheet closes.
         .task { await buildMesh() }
         .onChange(of: draft.angle) { redraw() }
         .onChange(of: draft.freePosition) { redraw(rough: isAiming) }
         .onChange(of: draft.freeYaw) { redraw(rough: isAiming) }
+        .onChange(of: draft.freePitch) { redraw(rough: isAiming) }
+        .onChange(of: draft.freeEyeHeight) { redraw(rough: isAiming) }
+        .onChange(of: draft.freeFieldOfView) { redraw(rough: isAiming) }
         .onChange(of: isAiming) { if !isAiming { redraw() } }
+        .onChange(of: room.proposalsData) { Task { await rebuildMesh() } }
+        .sheet(isPresented: $isAdjusting) {
+            if let plan {
+                AnyAngleSheet(room: room, plan: plan, draft: draft,
+                              inside: inside, isAiming: $isAiming)
+            }
+        }
     }
 
     /// Sits under the photos rather than over them: a card must never cover the
@@ -113,11 +126,24 @@ struct WhereStep: View {
     /// then kept — never rebuilt for a frame.
     private func buildMesh() async {
         guard !inside.isLoaded, let captured = room.capturedRoom else { return }
+        let proposals = room.proposals
         let built = await Task.detached(priority: .userInitiated) { () -> (Mesh, RoomFloor?) in
-            (RoomGeometry.build(from: captured), RoomFloor(room: captured))
+            (RoomGeometry.build(from: captured, proposals: proposals), RoomFloor(room: captured))
         }.value
         inside.load(built.0)
         standInside(built.1)
+        redraw()
+    }
+
+    /// Rebuilt only when the furniture changes, which now it can: a piece added
+    /// on the mini screen has to appear in the frame it will appear in.
+    private func rebuildMesh() async {
+        guard let captured = room.capturedRoom else { return }
+        let proposals = room.proposals
+        let built = await Task.detached(priority: .userInitiated) {
+            RoomGeometry.build(from: captured, proposals: proposals)
+        }.value
+        inside.load(built)
         redraw()
     }
 
@@ -138,7 +164,9 @@ struct WhereStep: View {
     /// rather than queue, so a fast drag never renders a position already left.
     private func redraw(rough: Bool = false) {
         guard draft.angle == .free else { return }
-        inside.request(position: draft.freePosition, yaw: draft.freeYaw, draft: rough)
+        inside.request(position: draft.freePosition, yaw: draft.freeYaw,
+                       pitch: draft.freePitch, eyeHeight: draft.freeEyeHeight,
+                       fieldOfView: draft.freeFieldOfView, draft: rough)
     }
 
     private var plan: FloorPlan? { room.capturedRoom.map { FloorPlan(room: $0) } }
@@ -173,9 +201,15 @@ struct WhereStep: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// Choosing it opens the mini screen: with no photographed spot to fall back
+    /// on, a dot on a small plan was all you got, and it was not enough to aim
+    /// a picture with.
     private var anyAngle: some View {
         let selected = draft.angle == .free
-        return Button { draft.angle = .free } label: {
+        return Button {
+            draft.angle = .free
+            isAdjusting = true
+        } label: {
             HStack(spacing: 14) {
                 Image(systemName: "move.3d")
                     .font(.system(size: 22, weight: .light))
@@ -184,7 +218,7 @@ struct WhereStep: View {
                     Text("Any angle")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Paper.ink)
-                    Text("Move the camera yourself. Less true to life.")
+                    Text("Move the camera yourself, and widen the lens. Less true to life.")
                         .font(.system(size: 13))
                         .foregroundStyle(Paper.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -235,23 +269,68 @@ private struct InsideView: View {
     }
 }
 
-/// The plan with only the camera on it: where you stand and which way you face.
-private struct StandingPicker: View {
+/// "Any angle", as a screen you can work in rather than a dot on a map.
+///
+/// A sheet rather than a push or a screen of its own: it answers one step's
+/// question, the step stays behind it, and Done puts you back on it with the
+/// frame already redrawn. What it holds is the three things that decide the
+/// picture — what the camera sees, where it stands, and how wide it looks — and
+/// the furniture, because the plan is one instrument everywhere it appears.
+private struct AnyAngleSheet: View {
+    let room: ScannedRoom
     let plan: FloorPlan
-    @Binding var position: SIMD2<Float>
-    @Binding var yaw: Float
-    @Binding var isDragging: Bool
-    let proposals: [Proposal]
-    let photoSpots: [PlanSpot?]
+    @ObservedObject var draft: DesignDraft
+    @ObservedObject var inside: InsideRenderer
+    @Binding var isAiming: Bool
 
-    @State private var fieldOfView: Float = InsideRenderer.fieldOfView
-    @State private var selection: Proposal.ID?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        CameraPlanPicker(plan: plan, mode: .camera, position: $position, yaw: $yaw,
-                         isDragging: $isDragging, fieldOfView: $fieldOfView,
-                         proposals: .constant(proposals), selection: $selection,
-                         canvas: Paper.tint, photoSpots: photoSpots)
+        NavigationStack {
+            ZStack {
+                Paper.sheet.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Already cropped to the 4:3 the picture is cut to, so
+                        // nothing you aim at lies outside it.
+                        ViewfinderView(image: inside.image, yaw: $draft.freeYaw,
+                                       pitch: $draft.freePitch, isDragging: $isAiming)
+                            .aspectRatio(4.0 / 3.0, contentMode: .fit)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+
+                        Text("Exactly the frame the picture is cut from. Drag it to turn and tilt.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Paper.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+
+                        PlanBoard(room: room, plan: plan,
+                                  position: $draft.freePosition, yaw: $draft.freeYaw,
+                                  fieldOfView: $draft.freeFieldOfView, isDragging: $isAiming,
+                                  eyeHeight: $draft.freeEyeHeight,
+                                  lens: .shot, planHeight: 240,
+                                  photoSpots: room.sortedPhotos.map(\.planSpot))
+                            .padding(.horizontal, 16)
+                            .padding(.top, 18)
+                            .padding(.bottom, 28)
+                    }
+                }
+            }
+            .navigationTitle("Any angle")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Paper.sheet, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                        .font(.system(size: 16, weight: .semibold))
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 }
 

@@ -18,10 +18,9 @@ final class WalkState: ObservableObject {
     /// Kept off the walls, so you never end up inside one looking at its back.
     static let wallMargin: Float = 0.3
     static let lookRate: Float = 0.006
-    /// Vertical angle of view. Wider than 100° bends a wall you are standing
-    /// close to badly enough that the room stops reading as square.
-    static let narrowestLens: Float = 50 * .pi / 180
-    static let widestLens: Float = 100 * .pi / 180
+    /// Vertical angle of view, from the one place the app keeps lens ranges.
+    static let narrowestLens: Float = Lens.walk.range.lowerBound
+    static let widestLens: Float = Lens.walk.range.upperBound
 
     @Published private(set) var isReady = false
     @Published private(set) var hasRoom = false
