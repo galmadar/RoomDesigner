@@ -173,9 +173,18 @@ struct DesignFlowView: View {
     }
 
     /// The photo sent with the request: the chosen spot's, or one taken near the free camera.
+    ///
+    /// Only ever a photo that knows where it was taken from. An uploaded photo
+    /// left unplaced shows some other part of the room from some other spot, and
+    /// sending it as `room_photo_url` would tell the model it is looking at the
+    /// very view it is being asked to draw — a wrong picture with nothing on
+    /// screen to say why. `nearestPhoto` already skips them; this is the other
+    /// way in, and it is closed here so nothing downstream has to know.
     private var sourcePhoto: ScanPhoto? {
         switch draft.angle {
-        case .photo(let index): return photos.indices.contains(index) ? photos[index] : nil
+        case .photo(let index):
+            guard photos.indices.contains(index), photos[index].isPlaced else { return nil }
+            return photos[index]
         case .free: return freeCamera.flatMap { PhotoDesignScene.nearestPhoto(to: $0, among: photos) }
         }
     }
@@ -265,7 +274,10 @@ final class DesignDraft: ObservableObject {
     init(room: ScannedRoom, standing: Standing? = nil) {
         cameFromTheWalk = standing != nil
         guard let standing else {
-            angle = room.sortedPhotos.isEmpty ? .free : .photo(0)
+            // The first photo that has a place in the room, never simply the
+            // first: an unplaced one has no camera to frame a picture through,
+            // so opening on it would offer an angle that cannot be used.
+            angle = room.sortedPhotos.firstIndex(where: \.isPlaced).map { .photo($0) } ?? .free
             return
         }
         angle = .free

@@ -14,6 +14,7 @@ struct PhotoAlignmentView: View {
     @State private var alignment: ScanAlignment?
     @State private var showsLines = true
     @State private var corrects = false
+    @State private var isPlacing = false
 
     var body: some View {
         ZStack {
@@ -49,6 +50,7 @@ struct PhotoAlignmentView: View {
         }
         .overlay(alignment: .bottom) { notes }
         .task { await load() }
+        .fullScreenCover(isPresented: $isPlacing) { PhotoPlaceFlow(room: room, photo: photo) }
     }
 
     private var viewpoint: PhotoViewpoint? {
@@ -57,12 +59,41 @@ struct PhotoAlignmentView: View {
         return taken
     }
 
-    private var notes: some View {
+    @ViewBuilder private var notes: some View {
+        if photo.isPlaced { placedNotes } else { unplacedNotes }
+    }
+
+    /// Nothing can be drawn over a photo that has no pose — there is no camera
+    /// to project through — so this says so plainly and offers the way out
+    /// rather than showing an empty overlay and leaving it a mystery.
+    private var unplacedNotes: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("This photo has no place in the room yet, so there is nothing to draw over it and no spot to stand you in.")
+                .foregroundStyle(Paper.ink)
+            Button("Place it") { isPlacing = true }
+                .buttonStyle(QuietButtonStyle(height: 44))
+        }
+        .font(.system(size: 13))
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .paperCard(radius: 16)
+        .padding(16)
+    }
+
+    private var placedNotes: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(showsLines
                  ? "If the lines sit on the real walls and floor, the photo lines up with the scan. Tap the photo to hide them."
                  : "Tap the photo to show the lines again.")
                 .foregroundStyle(Paper.ink)
+            if photo.isUploaded {
+                Text(photo.caption).foregroundStyle(Paper.secondaryInk)
+                Button("Move it") { isPlacing = true }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Paper.fallbackAccent)
+                    .frame(minHeight: 30)
+            }
             if let check = photo.viewpoint?.arkitCheckPixels {
                 Text("Camera maths vs ARKit: \(check, format: .number.precision(.fractionLength(1))) px")
                     .foregroundStyle(Paper.secondaryInk)

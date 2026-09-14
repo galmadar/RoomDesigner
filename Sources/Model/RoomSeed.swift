@@ -66,6 +66,13 @@ enum RoomSeed {
     /// reaching the geometry rather than only the labels.
     static var opensScan: Bool { environment["SEED_OPEN_SCAN"] == "1" }
 
+    /// One screen to open once a room is up: "pick" the photo picker, "place"
+    /// the three-way question about an uploaded photo, "placeByHand" the screen
+    /// that lines one up, "design" the design flow. Not one of them can be
+    /// tapped from a script, and every one of them is the real screen — this
+    /// only stands in for the finger.
+    static var opens: String? { environment["SEED_OPEN"] }
+
     // MARK: - The plan without a finger
 
     /// The plan is a map: zoomed, panned, and stood on. None of the three can be
@@ -88,6 +95,7 @@ enum RoomSeed {
     static var route: String? { nil }
     static var sentence: String? { nil }
     static var opensScan: Bool { false }
+    static var opens: String? { nil }
     static var planZoom: CGFloat? { nil }
     static var planPan: CGSize? { nil }
     static var planStep: Float? { nil }

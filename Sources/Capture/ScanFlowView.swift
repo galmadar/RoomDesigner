@@ -10,6 +10,10 @@ struct ScanFlowView: View {
         let room: CapturedRoom
         let shots: [ScanCamera.Shot]
         let liveRoomData: Data?
+        /// The session's archived `ARWorldMap`, or nil if it had none to give.
+        /// Kept so a photo added to this room later can be placed by standing in
+        /// it again rather than by eye — see ``RoomWorldMap``.
+        let worldMapData: Data?
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -126,6 +130,10 @@ private struct ScanCaptureStage: View {
     @StateObject private var camera = ScanCamera()
     @StateObject private var coach = ScanCoach()
     @State private var isFinishing = false
+    /// True for the moment between the tap and the capture being stopped, while
+    /// the room's world map is being taken.
+    @State private var isKeepingMap = false
+    @State private var worldMapData: Data?
 
     var body: some View {
         ZStack {
@@ -141,9 +149,10 @@ private struct ScanCaptureStage: View {
 
             flash
 
-            ScanCoachOverlay(coach: coach, photoCount: camera.count, isFinishing: isFinishing,
+            ScanCoachOverlay(coach: coach, photoCount: camera.count,
+                             isFinishing: isFinishing || isKeepingMap,
                              onCancel: onCancel, onShutter: { camera.capture() },
-                             onFinish: { isFinishing = true })
+                             onFinish: { wrapUp() })
         }
         .sensoryFeedback(.impact(weight: .medium), trigger: camera.count)
         .sensoryFeedback(.warning, trigger: camera.misses)
@@ -162,8 +171,23 @@ private struct ScanCaptureStage: View {
             }
     }
 
+    /// The room's map is taken here, on the tap, and not after: stopping the
+    /// capture pauses the AR session underneath it, and the map only exists
+    /// while that session runs. A scan that yields none simply has none — the
+    /// capture is stopped either way, so this can only cost a moment.
+    private func wrapUp() {
+        guard !isFinishing, !isKeepingMap else { return }
+        isKeepingMap = true
+        Task {
+            worldMapData = await camera.worldMapData()
+            isKeepingMap = false
+            isFinishing = true
+        }
+    }
+
     private func finish(with captured: CapturedRoom) async {
         let shots = await camera.collected()
-        onFinished(.init(room: captured, shots: shots, liveRoomData: camera.liveRoomData))
+        onFinished(.init(room: captured, shots: shots, liveRoomData: camera.liveRoomData,
+                         worldMapData: worldMapData))
     }
 }

@@ -12,6 +12,9 @@ struct RoomDetailView: View {
 
     @State private var opened: RoomPicture?
     @State private var openedPhoto: ScanPhoto?
+    /// A photo waiting to be told where in the room it belongs.
+    @State private var placingPhoto: ScanPhoto?
+    @State private var isAddingPhoto = false
     /// The card on show, by id rather than index: cards come and go under it.
     @State private var page = ""
     @State private var isShowingGallery = false
@@ -47,6 +50,9 @@ struct RoomDetailView: View {
                         Label("Photos of the room", systemImage: "camera")
                     }
                     .disabled(room.sortedPhotos.isEmpty)
+                    Button { isAddingPhoto = true } label: {
+                        Label("Add a photo of the room", systemImage: "photo.badge.plus")
+                    }
                     Button { isShowingHelp = true } label: {
                         Label("How this works", systemImage: "questionmark.circle")
                     }
@@ -60,6 +66,12 @@ struct RoomDetailView: View {
         .task { await accents.load(room) }
         .task { if RoomSeed.opensIdentity { isCorrectingRoom = true } }
         .task { if RoomSeed.opensScan { isSeeingScan = true } }
+        .task { if RoomSeed.opens == "pick" { isAddingPhoto = true } }
+        .task { if RoomSeed.opens == "design" { isDesigning = true } }
+        .task {
+            guard RoomSeed.opens == "place" || RoomSeed.opens == "placeByHand" else { return }
+            placingPhoto = room.sortedPhotos.first { !$0.isPlaced }
+        }
 #if DEBUG
         .task {
             if let index = DemoContents.page, cards.indices.contains(index) { page = cards[index].id }
@@ -70,6 +82,14 @@ struct RoomDetailView: View {
         }
         .fullScreenCover(item: $openedPhoto) { photo in
             PhotoAlignmentView(photo: photo, room: room)
+        }
+        // Picking a photo asks where it was taken from straight away — once,
+        // while it is still the thing being thought about. Skipping is one tap
+        // and is never asked again.
+        .roomPhotoPicker(room: room, isPresented: $isAddingPhoto) { placingPhoto = $0 }
+        .fullScreenCover(item: $placingPhoto) { photo in
+            PhotoPlaceFlow(room: room, photo: photo)
+                .environment(\.roomAccent, accent)
         }
         .fullScreenCover(isPresented: $isShowingGallery) {
             PictureGalleryView(room: room)
@@ -145,11 +165,14 @@ struct RoomDetailView: View {
         }
     }
 
-    /// A page opens whatever it already opened from its own screen.
+    /// A page opens whatever it already opened from its own screen — except a
+    /// photo with no place in the room, where checking it against the scan is
+    /// the one thing that cannot be done. That one offers to place it instead.
     private func open(_ card: RoomPage) {
         switch card {
         case .picture(let picture): opened = picture
-        case .photo(let photo): openedPhoto = photo
+        case .photo(let photo):
+            if photo.isPlaced { openedPhoto = photo } else { placingPhoto = photo }
         case .making: break
         }
     }
@@ -202,13 +225,16 @@ struct RoomDetailView: View {
     }
 
     private var countsText: String {
-        let photos = room.sortedPhotos.count
+        let all = room.sortedPhotos
+        let photos = all.count
         let made = pictures.count
         let left = made == 1 ? "1 picture" : "\(made) pictures"
         let right = photos == 1 ? "1 photo of the real room" : "\(photos) photos of the real room"
         let working = roomJobs.filter(\.isWorking).count
         let making = working == 0 ? "" : " · \(working) being made"
-        return "\(left) · \(right)\(making)"
+        let loose = all.filter { !$0.isPlaced }.count
+        let unplaced = loose == 0 ? "" : " · \(loose) with no place yet"
+        return "\(left) · \(right)\(unplaced)\(making)"
     }
 
     // MARK: - The one action

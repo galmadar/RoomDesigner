@@ -27,6 +27,10 @@ enum DemoContents {
     /// Adds a picture being made, frozen, as the carousel's first page.
     static var wantsMaking: Bool { env["DEMO_MAKING"] == "1" }
 
+    /// Leaves the last photo without a pose, as an uploaded one that was never
+    /// placed — the only way to see that case without a camera roll and a scan.
+    static var wantsUnplaced: Bool { env["DEMO_UNPLACED"] == "1" }
+
     /// The page the carousel opens on, counting from zero.
     static var page: Int? { env["DEMO_PAGE"].flatMap { Int($0) } }
 
@@ -76,10 +80,13 @@ enum DemoContents {
 
         for index in 0..<wanted.photos {
             let image = photo(index)
-            let shot = ScanPhoto(takenAt: .now.addingTimeInterval(TimeInterval(index) * 30 - 86400),
-                                 imageData: image.jpegData(compressionQuality: 0.9) ?? Data(),
-                                 thumbnailData: small(image).jpegData(compressionQuality: 0.8),
-                                 viewpoint: viewpoint())
+            let takenAt = Date.now.addingTimeInterval(TimeInterval(index) * 30 - 86400)
+            let full = image.jpegData(compressionQuality: 0.9) ?? Data()
+            let thumbnail = small(image).jpegData(compressionQuality: 0.8)
+            let shot = wantsUnplaced && index == wanted.photos - 1
+                ? ScanPhoto(uploaded: full, thumbnailData: thumbnail, takenAt: takenAt)
+                : ScanPhoto(takenAt: takenAt, imageData: full,
+                            thumbnailData: thumbnail, viewpoint: viewpoint())
             context.insert(shot)
             room.photos = (room.photos ?? []) + [shot]
         }
