@@ -17,12 +17,6 @@ final class InsideRenderer: ObservableObject {
     static let draftSize = 288
     static let finalSize = 768
 
-    /// How the free camera stands. Mirrors `DesignFlowView.freeCamera`, which
-    /// builds the shot that actually gets sent.
-    static let eyeHeight: Float = 1.5
-    static let pitch: Float = -8 * .pi / 180
-    static let fieldOfView: Float = 65 * .pi / 180
-
     private var mesh: Mesh?
     /// Measured once with the mesh: `bounds` walks every vertex, which is not
     /// something to do on the main thread between frames.
@@ -30,9 +24,15 @@ final class InsideRenderer: ObservableObject {
     private var isRendering = false
     private var pending: Job?
 
+    /// Everything the free camera is, rather than a position and three
+    /// constants: the mini screen moves all of it, and the preview has to be
+    /// the shot that would be sent.
     private struct Job {
         var position: SIMD2<Float>
         var yaw: Float
+        var pitch: Float
+        var eyeHeight: Float
+        var fieldOfView: Float
         var size: Int
     }
 
@@ -44,8 +44,10 @@ final class InsideRenderer: ObservableObject {
         bounds = mesh.bounds
     }
 
-    func request(position: SIMD2<Float>, yaw: Float, draft: Bool) {
-        pending = Job(position: position, yaw: yaw,
+    func request(position: SIMD2<Float>, yaw: Float, pitch: Float, eyeHeight: Float,
+                 fieldOfView: Float, draft: Bool) {
+        pending = Job(position: position, yaw: yaw, pitch: pitch, eyeHeight: eyeHeight,
+                      fieldOfView: fieldOfView,
                       size: draft ? Self.draftSize : Self.finalSize)
         pump()
     }
@@ -58,8 +60,8 @@ final class InsideRenderer: ObservableObject {
 
         Task {
             let camera = Camera.standing(at: job.position, in: bounds,
-                                         eyeHeight: Self.eyeHeight, yaw: job.yaw,
-                                         pitch: Self.pitch, fieldOfView: Self.fieldOfView)
+                                         eyeHeight: job.eyeHeight, yaw: job.yaw,
+                                         pitch: job.pitch, fieldOfView: job.fieldOfView)
             // Cropped by the shot itself, so the preview and the render that
             // gets sent frame the same thing.
             let rendered = await ShotRenderer.shared.image(

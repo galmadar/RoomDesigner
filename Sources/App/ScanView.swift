@@ -3,8 +3,10 @@ import simd
 
 /// Seeing the scan: the room as it was captured, from wherever you stand in it.
 ///
-/// A screen of its own, beside Design and Layout. It is how you check a scan
-/// came out properly before designing anything from it.
+/// A screen of its own, beside Design and Walk. It is how you check a scan came
+/// out properly before designing anything from it, and — since the plan under
+/// it became the whole instrument — where the furniture that goes into the
+/// picture is arranged.
 struct ScanView: View {
     let room: ScannedRoom
 
@@ -68,30 +70,19 @@ struct ScanView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 10)
 
-                CameraPlanPicker(plan: plan, mode: .camera,
-                                 position: $position, yaw: $yaw,
-                                 isDragging: $isDragging, fieldOfView: $fieldOfView,
-                                 proposals: .constant(room.proposals), selection: .constant(nil),
-                                 canvas: Paper.tint,
-                                 photoSpots: room.sortedPhotos.map(\.planSpot),
-                                 activeSpot: activePhoto,
-                                 onPickSpot: { snapToPhoto($0) })
-                    .frame(height: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                PlanBoard(room: room, plan: plan,
+                          position: $position, yaw: $yaw, fieldOfView: $fieldOfView,
+                          isDragging: $isDragging, eyeHeight: $eyeHeight,
+                          lens: .square,
+                          photoSpots: room.sortedPhotos.map(\.planSpot),
+                          activeSpot: activePhoto,
+                          onPickSpot: { snapToPhoto($0) })
                     .padding(.horizontal, 16)
                     .padding(.top, 18)
 
-                Text(planHint)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Paper.secondaryInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                dolly
                     .padding(.horizontal, 20)
-                    .padding(.top, 10)
-
-                lens
-                    .padding(.horizontal, 20)
-                    .padding(.top, 22)
+                    .padding(.top, 20)
                     .padding(.bottom, 28)
             }
         }
@@ -171,78 +162,29 @@ struct ScanView: View {
         }
     }
 
-    // MARK: - The floor plan
+    // MARK: - Walking the camera in and out
 
-    private var planHint: String {
-        let base = "Drag the dot to move. Drag the small circle to turn. Pinch to zoom, double-tap to fit."
-        guard !room.sortedPhotos.isEmpty else { return base }
-        return base + " Tap a numbered square to stand exactly where that photo was taken."
-    }
-
-    // MARK: - Lens and eye height
-
-    private var lens: some View {
-        VStack(spacing: 18) {
-            control(symbol: "arrow.left.and.right.square",
-                    value: Binding(get: { Double(fieldOfView) }, set: { fieldOfView = Float($0) }),
-                    range: Double(30 * Float.pi / 180)...Double(110 * Float.pi / 180),
-                    label: "Lens \(Int(fieldOfView * 180 / .pi))° — \(lensDescription)")
-
-            control(symbol: "figure.stand",
-                    value: Binding(get: { Double(eyeHeight) }, set: { eyeHeight = Float($0) }),
-                    range: 0.4...2.2,
-                    label: String(format: "Eye height %.2f m — %@", eyeHeight, heightDescription))
-
-            HStack(spacing: 10) {
-                Button { dolly(-0.35) } label: {
-                    Label("Back", systemImage: "minus.magnifyingglass")
-                }
-                .buttonStyle(QuietButtonStyle())
-
-                Button { dolly(0.35) } label: {
-                    Label("Closer", systemImage: "plus.magnifyingglass")
-                }
-                .buttonStyle(QuietButtonStyle())
+    /// The lens and the eye height are the plan's, so they are the same control
+    /// here as on the design flow's mini screen. These two are not: they step
+    /// the camera along the way it is facing, which only makes sense beside a
+    /// picture you are looking at.
+    private var dolly: some View {
+        HStack(spacing: 10) {
+            Button { step(-0.35) } label: {
+                Label("Back", systemImage: "minus.magnifyingglass")
             }
-        }
-    }
+            .buttonStyle(QuietButtonStyle())
 
-    private func control(symbol: String, value: Binding<Double>,
-                         range: ClosedRange<Double>, label: String) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 17, weight: .light))
-                .foregroundStyle(Paper.mutedInk)
-                .frame(width: 26)
-            VStack(alignment: .leading, spacing: 4) {
-                Slider(value: value, in: range)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel(label)
-                Text(label)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Paper.secondaryInk)
-                    .fixedSize(horizontal: false, vertical: true)
+            Button { step(0.35) } label: {
+                Label("Closer", systemImage: "plus.magnifyingglass")
             }
+            .buttonStyle(QuietButtonStyle())
         }
-    }
-
-    private var lensDescription: String {
-        let degrees = fieldOfView * 180 / .pi
-        if degrees < 45 { return "tight, picks out one corner" }
-        if degrees < 75 { return "natural, like your eyes" }
-        return "wide, makes the room feel bigger"
-    }
-
-    private var heightDescription: String {
-        if eyeHeight < 0.8 { return "low, like sitting on the floor" }
-        if eyeHeight < 1.3 { return "seated" }
-        if eyeHeight < 1.8 { return "standing" }
-        return "high, looking down into the room"
     }
 
     /// Steps along the way the camera is facing, so Back and Closer mean what
     /// you are looking at, not a compass direction.
-    private func dolly(_ metres: Float) {
+    private func step(_ metres: Float) {
         guard let bounds = previews.bounds else { return }
         let heading = SIMD2(sin(yaw), -cos(yaw))
         position = Camera.clamp(position + heading * metres, in: bounds)
@@ -277,7 +219,7 @@ struct ScanView: View {
         yaw = spot.yaw
         pitch = min(max(spot.pitch, -40 * .pi / 180), 40 * .pi / 180)
         eyeHeight = min(max(spot.height - bounds.min.y, 0.4), 2.2)
-        fieldOfView = min(max(spot.fieldOfView, 30 * .pi / 180), 110 * .pi / 180)
+        fieldOfView = Lens.square.clamped(spot.fieldOfView)
         snap = PhotoSnap(index: index, position: position, yaw: yaw, pitch: pitch,
                          eyeHeight: eyeHeight, fieldOfView: fieldOfView)
     }

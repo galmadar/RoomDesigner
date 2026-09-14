@@ -14,7 +14,6 @@ struct RoomDetailView: View {
     @State private var isShowingGallery = false
     @State private var isShowingPhotos = false
     @State private var isDesigning = false
-    @State private var isLayingOut = false
     @State private var isWalking = false
     @State private var isSeeingScan = false
     @State private var isShowingHelp = false
@@ -84,9 +83,6 @@ struct RoomDetailView: View {
         .fullScreenCover(isPresented: $isWalking) {
             WalkView(room: room)
                 .environment(\.roomAccent, accent)
-        }
-        .navigationDestination(isPresented: $isLayingOut) {
-            LayoutView(room: room)
         }
         .navigationDestination(isPresented: $isSeeingScan) {
             ScanView(room: room)
@@ -301,12 +297,14 @@ struct RoomDetailView: View {
             }
             .buttonStyle(PrimaryButtonStyle())
 
+            // Layout used to stand here. Everything it did — adding a piece,
+            // moving, turning, resizing, removing it, keeping an arrangement —
+            // is on the plan inside "See the scan", where you can see what
+            // moving it does to the room.
             HStack(spacing: 10) {
                 Button("Walk") { isWalking = true }
                     .buttonStyle(QuietButtonStyle())
                 Button("See the scan") { isSeeingScan = true }
-                    .buttonStyle(QuietButtonStyle())
-                Button("Layout") { isLayingOut = true }
                     .buttonStyle(QuietButtonStyle())
             }
         }

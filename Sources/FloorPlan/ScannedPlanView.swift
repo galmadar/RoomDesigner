@@ -3,9 +3,9 @@ import simd
 
 /// The plan, with the scanned furniture as the thing you act on.
 ///
-/// `LayoutView`'s picker exists for `room.proposals` — furniture the user
-/// placed. Scanned objects are not in that array and were not selectable at
-/// all, which is why a wrongly measured closet had nowhere for an edit to go.
+/// `PlanBoard` exists for `room.proposals` — furniture the user placed. Scanned
+/// objects are not in that array and were not selectable at all, which is why a
+/// wrongly measured closet had nowhere for an edit to go.
 /// This draws the same plan and makes the scan itself the subject.
 struct ScannedPlanView: View {
 
