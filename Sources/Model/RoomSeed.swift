@@ -65,11 +65,32 @@ enum RoomSeed {
     /// the conditioning image comes from — so a correction can be shown
     /// reaching the geometry rather than only the labels.
     static var opensScan: Bool { environment["SEED_OPEN_SCAN"] == "1" }
+
+    // MARK: - The plan without a finger
+
+    /// The plan is a map: zoomed, panned, and stood on. None of the three can be
+    /// done to a simulator from a script, so these say where it opens instead.
+    static var planZoom: CGFloat? {
+        environment["SEED_PLAN_ZOOM"].flatMap { Double($0) }.map { CGFloat($0) }
+    }
+
+    /// Screen points, "x,y".
+    static var planPan: CGSize? {
+        let pair = environment["SEED_PLAN_PAN"]?.split(separator: ",") ?? []
+        guard pair.count == 2, let x = Double(pair[0]), let y = Double(pair[1]) else { return nil }
+        return CGSize(width: x, height: y)
+    }
+
+    /// Metres to walk the camera along its heading once the scan screen is up.
+    static var planStep: Float? { environment["SEED_PLAN_STEP"].flatMap { Float($0) } }
 #else
     static var opensIdentity: Bool { false }
     static var route: String? { nil }
     static var sentence: String? { nil }
     static var opensScan: Bool { false }
+    static var planZoom: CGFloat? { nil }
+    static var planPan: CGSize? { nil }
+    static var planStep: Float? { nil }
 #endif
 }
 

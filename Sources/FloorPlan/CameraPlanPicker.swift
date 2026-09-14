@@ -55,10 +55,12 @@ struct CameraPlanPicker: View {
     var onPickSpot: (Int) -> Void = { _ in }
 
     @State private var grabbed: Grab?
-    @State private var zoom: CGFloat = 1
-    @State private var zoomAnchor: CGFloat = 1
+    // Opening values so a simulator run can be zoomed or panned without a
+    // finger; 1 and zero in a release build, where `RoomSeed` answers nothing.
+    @State private var zoom: CGFloat = RoomSeed.planZoom ?? 1
+    @State private var zoomAnchor: CGFloat = RoomSeed.planZoom ?? 1
     /// Where the map has been slid to, and where it stood when this drag began.
-    @State private var pan: CGSize = .zero
+    @State private var pan: CGSize = RoomSeed.planPan ?? .zero
     @State private var panStart: CGSize = .zero
 
     private enum Grab: Equatable { case body, direction, proposal(Proposal.ID), map }

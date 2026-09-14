@@ -48,6 +48,7 @@ struct ScanView: View {
         .environment(\.roomAccent, accent)
         .task { await accents.load(room) }
         .task { prepare() }
+        .task { if let metres = RoomSeed.planStep { step(metres) } }
         .task(id: photoPreviewKey) { await renderPhotoPreview() }
         .onChange(of: position) { render() }
         .onChange(of: yaw) { render() }
