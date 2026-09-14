@@ -18,12 +18,26 @@ final class WalkState: ObservableObject {
     /// Kept off the walls, so you never end up inside one looking at its back.
     static let wallMargin: Float = 0.3
     static let lookRate: Float = 0.006
+    /// Vertical angle of view. Wider than 100° bends a wall you are standing
+    /// close to badly enough that the room stops reading as square.
+    static let narrowestLens: Float = 50 * .pi / 180
+    static let widestLens: Float = 100 * .pi / 180
 
     @Published private(set) var isReady = false
     @Published private(set) var hasRoom = false
     @Published private(set) var eyeHeight: Float = 1.6
     /// The photo you are standing at, until you move off it.
     @Published private(set) var standingAt: Int?
+    /// Published because a photo spot changes the lens under you, and the
+    /// chrome has to show what it changed to.
+    @Published private(set) var fieldOfView: Float = 65 * .pi / 180
+    /// The lens of the spot you are standing at, kept so the chrome can say
+    /// when the view has been moved off it.
+    @Published private(set) var spotLens: Float?
+    /// What is on the floor: the plan as it stands, then each saved arrangement.
+    @Published private(set) var layouts: [Layout] = []
+    @Published private(set) var showing: Layout.ID?
+    @Published private(set) var isRelaying = false
 
     private(set) var renderer: WalkRenderer?
 
@@ -32,10 +46,17 @@ final class WalkState: ObservableObject {
     var position: SIMD2<Float> = .zero
     /// Stick, −1…1 each way; y is forward.
     var walk: SIMD2<Float> = .zero
-    var fieldOfView: Float = 65 * .pi / 180
     /// Set while a photo is being compared: its exact pose, roll and lens.
     var pinned: Camera?
 
+    /// A layout you can stand in. Read-only: walking never saves one back.
+    struct Layout: Identifiable, Equatable {
+        let id: UUID
+        let name: String
+        let proposals: [Proposal]
+    }
+
+    private var scanData: Data?
     private var floor: RoomFloor?
     private var bounds: (min: SIMD3<Float>, max: SIMD3<Float>) = (.zero, .zero)
 
@@ -47,6 +68,14 @@ final class WalkState: ObservableObject {
         guard !isReady else { return }
         let scan = room.capturedRoomData
         let proposals = room.proposals
+
+        // Read once, here: the walk never reaches back into the model again.
+        let asItStands = Layout(id: UUID(), name: "As it stands now", proposals: proposals)
+        layouts = [asItStands] + room.arrangements.map {
+            Layout(id: $0.id, name: $0.name, proposals: $0.proposals)
+        }
+        showing = asItStands.id
+        scanData = scan
 
         let built = await Task.detached(priority: .userInitiated) { () -> (Mesh, RoomFloor?)? in
             guard let scan,
@@ -128,6 +157,22 @@ final class WalkState: ObservableObject {
         leaveSpot()
     }
 
+    /// Changing the lens does not move you, so it does not leave the spot —
+    /// unlike height, it only changes how much of the room the frame holds.
+    func setFieldOfView(_ radians: Float) {
+        fieldOfView = simd_clamp(radians, Self.narrowestLens, Self.widestLens)
+    }
+
+    func matchSpotLens() {
+        if let spotLens { fieldOfView = spotLens }
+    }
+
+    /// False once you are at a photo spot and have moved the lens off its own.
+    var lensMatchesSpot: Bool {
+        guard let spotLens else { return true }
+        return abs(spotLens - fieldOfView) < 0.001
+    }
+
     private func move(to spot: SIMD2<Float>) {
         position = floor?.keepInside(spot, margin: Self.wallMargin) ?? spot
         leaveSpot()
@@ -136,6 +181,7 @@ final class WalkState: ObservableObject {
     private func leaveSpot() {
         // Only on a real change: this runs inside the draw loop.
         if standingAt != nil { standingAt = nil }
+        if spotLens != nil { spotLens = nil }
     }
 
     // MARK: - Photo spots
@@ -150,12 +196,41 @@ final class WalkState: ObservableObject {
         yaw = spot.yaw
         pitch = spot.pitch
         eyeHeight = simd_clamp(spot.height - level, Self.lowestEye, Self.highestEye)
+        // Unclamped on purpose: the spot is only worth standing at through the
+        // lens the photo was actually taken with.
         fieldOfView = viewpoint.verticalFieldOfView
+        spotLens = fieldOfView
         standingAt = index
     }
 
     /// Exactly the photo's camera, roll included, for holding the two side by side.
     func compare(with photo: ScanPhoto?) {
         pinned = photo?.camera
+    }
+
+    // MARK: - Layouts
+
+    /// Another arrangement of the same room. The walls, floor and openings do
+    /// not move, so only the mesh is rebuilt: you are left standing exactly
+    /// where you were, facing the same way, through the same lens.
+    func show(_ wanted: Layout.ID) async {
+        guard !isRelaying, wanted != showing,
+              let chosen = layouts.first(where: { $0.id == wanted }),
+              let scanData, let renderer
+        else { return }
+
+        isRelaying = true
+        defer { isRelaying = false }
+
+        let proposals = chosen.proposals
+        let rebuilt = await Task.detached(priority: .userInitiated) { () -> Mesh? in
+            guard let captured = try? JSONDecoder().decode(CapturedRoom.self, from: scanData)
+            else { return nil }
+            return RoomGeometry.build(from: captured, proposals: proposals)
+        }.value
+
+        guard let rebuilt, !rebuilt.isEmpty else { return }
+        renderer.replace(mesh: rebuilt)
+        showing = wanted
     }
 }
