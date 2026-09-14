@@ -14,8 +14,13 @@ struct WhereStep: View {
     /// Built once for this step and kept: renderer, mesh and measured bounds.
     @StateObject private var inside = InsideRenderer()
     @State private var isAiming = false
+    @ObservedObject private var learned = Learned.shared
 
     private var photos: [ScanPhoto] { room.sortedPhotos }
+
+    /// The photographed spots are the only part of Design nobody would guess.
+    /// With no photos there is nothing to explain, so nothing is said.
+    private var isTeaching: Bool { !learned.hasSeen(.designWhere) && !photos.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,6 +80,7 @@ struct WhereStep: View {
                 .padding(.top, 16)
                 .padding(.bottom, 28)
         }
+        .overlay(alignment: .bottom) { lesson }
         // Driven from here rather than from the plan: the plan publishes where
         // the camera is, never when the picture of it is out of date.
         .task { await buildMesh() }
@@ -82,6 +88,25 @@ struct WhereStep: View {
         .onChange(of: draft.freePosition) { redraw(rough: isAiming) }
         .onChange(of: draft.freeYaw) { redraw(rough: isAiming) }
         .onChange(of: isAiming) { if !isAiming { redraw() } }
+    }
+
+    /// Sits under the photos rather than over them: a card must never cover the
+    /// thing it is describing.
+    @ViewBuilder private var lesson: some View {
+        if isTeaching {
+            ZStack(alignment: .bottom) {
+                Color.black.opacity(0.46)
+                    .ignoresSafeArea()
+                    .onTapGesture { learned.mark(.designWhere) }
+                LearnCard(
+                    title: "Stand where you stood",
+                    lines: ["While you were scanning, the app kept a photo at each of these spots and remembered exactly where you were standing. Choose one and the picture is made from there, so it lines up with the room you already know.",
+                            "Any angle works too. It just has no photograph to match."],
+                    onDismiss: { learned.mark(.designWhere) })
+                    .padding(.bottom, 26)
+            }
+            .transition(.opacity)
+        }
     }
 
     /// The one mesh this step renders from, assembled off the main thread and

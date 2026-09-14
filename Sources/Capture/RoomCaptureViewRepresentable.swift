@@ -8,6 +8,8 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
     let isFinished: Bool
     /// Photos come from this view's own AR session, so the camera needs the view.
     let camera: ScanCamera
+    /// Coaching is read off the same session, through the recorder the camera installs.
+    let coach: ScanCoach
     let onFinish: (Result<CapturedRoom, Error>) -> Void
 
     func makeUIView(context: Context) -> RoomCaptureView {
@@ -16,6 +18,7 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
         view.captureSession.run(configuration: RoomCaptureSession.Configuration())
         // After `run`, in case the view claims the session's delegate there.
         camera.attach(to: view)
+        coach.attach(to: view, recorder: camera.liveRoom)
         context.coordinator.view = view
         return view
     }
