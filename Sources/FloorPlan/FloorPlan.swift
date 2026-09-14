@@ -6,6 +6,10 @@ import simd
 /// Everything here is measured rather than guessed — which is the whole reason
 /// the scan is worth having. The abandoned web app asked the model to invent
 /// zone rectangles and then checked them; a scan makes that unnecessary.
+///
+/// Measured, but not beyond argument: footprints carry the corrected size and
+/// the corrected label, so a closet drawn half its real width can be put right
+/// on the plan itself.
 struct FloorPlan {
 
     struct Segment {
@@ -13,11 +17,17 @@ struct FloorPlan {
         var end: SIMD2<Float>
     }
 
-    struct Footprint {
+    struct Footprint: Identifiable {
+        /// The scanned object's own identifier, which is what a correction is
+        /// keyed on — and what makes a footprint selectable.
+        var id: UUID
         var centre: SIMD2<Float>
         var size: SIMD2<Float>
         var rotation: Float
         var label: String
+        /// As RoomPlan measured it, so the plan can draw what is being changed.
+        var scannedSize: SIMD2<Float>
+        var isCorrected: Bool
     }
 
     var walls: [Segment] = []
@@ -25,15 +35,23 @@ struct FloorPlan {
     var windows: [Segment] = []
     var objects: [Footprint] = []
 
-    init(room: CapturedRoom) {
+    init(room: CapturedRoom, corrections: RoomCorrections = .none) {
+        self.init(room: room, reading: RoomReading(room: room, corrections: corrections))
+    }
+
+    init(room: CapturedRoom, reading: RoomReading) {
         walls = room.walls.map(Self.segment)
         doors = room.doors.map(Self.segment)
         windows = room.windows.map(Self.segment)
-        objects = room.objects.map { object in
-            Footprint(centre: Self.groundPosition(object.transform),
+        objects = reading.objects.map { object in
+            Footprint(id: object.id,
+                      centre: object.groundPosition,
                       size: SIMD2(object.dimensions.x, object.dimensions.z),
-                      rotation: Self.yaw(object.transform),
-                      label: Self.name(of: object.category))
+                      rotation: object.yaw,
+                      label: object.label,
+                      scannedSize: SIMD2(object.scannedDimensions.x,
+                                         object.scannedDimensions.z),
+                      isCorrected: object.isCorrected)
         }
     }
 
@@ -70,25 +88,10 @@ struct FloorPlan {
         atan2(transform.columns.0.z, transform.columns.0.x)
     }
 
-    private static func name(of category: CapturedRoom.Object.Category) -> String {
-        switch category {
-        case .bathtub: return "Bath"
-        case .bed: return "Bed"
-        case .chair: return "Chair"
-        case .dishwasher: return "Dishwasher"
-        case .fireplace: return "Fireplace"
-        case .oven: return "Oven"
-        case .refrigerator: return "Fridge"
-        case .sink: return "Sink"
-        case .sofa: return "Sofa"
-        case .stairs: return "Stairs"
-        case .storage: return "Storage"
-        case .stove: return "Stove"
-        case .table: return "Table"
-        case .television: return "TV"
-        case .toilet: return "Toilet"
-        case .washerDryer: return "Washer"
-        @unknown default: return "Object"
-        }
+    /// The plan's own shortened labels. A correction outranks the category, so
+    /// this is the fallback for an object the user has not contradicted —
+    /// ``RoomReading`` decides which of the two a footprint gets.
+    static func name(of category: CapturedRoom.Object.Category) -> String {
+        ObjectVocabulary.term(of: category).label
     }
 }
