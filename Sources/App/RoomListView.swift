@@ -103,8 +103,12 @@ struct RoomListView: View {
             }
             // Checked on appearing as well as on change: a tap that launched the
             // app from cold sets this before there is a list to open anything in.
+            // The rooms are watched too, because on that cold launch the intent
+            // arrives before the query has any room to match it against, and
+            // nothing would ever ask a second time.
             .task { openRoomIfAsked() }
             .onChange(of: notices.opening) { _, _ in openRoomIfAsked() }
+            .onChange(of: rooms.count) { _, _ in openRoomIfAsked() }
             .fullScreenCover(isPresented: $isScanning) {
                 ScanFlowView { scan in
                     let room = ScannedRoom(name: "Room \(rooms.count + 1)")
