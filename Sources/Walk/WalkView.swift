@@ -15,6 +15,8 @@ struct WalkView: View {
 
     @StateObject private var walk = WalkState()
     @State private var comparing: Int?
+    /// The view the shutter was pressed on, while the design flow is open on it.
+    @State private var designing: Standing?
     @State private var blend: Double = 1
     @State private var lastDrag: CGSize = .zero
     @State private var pinchStart: Float?
@@ -44,6 +46,12 @@ struct WalkView: View {
         .statusBarHidden()
         .tint(accent)
         .task { await walk.load(room) }
+        // Opened over the room rather than instead of it: the flow hands the
+        // picture off and closes, and you are still standing where you shot it.
+        .fullScreenCover(item: $designing) { standing in
+            DesignFlowView(room: room, standing: standing)
+                .environment(\.roomAccent, accent)
+        }
     }
 
     // MARK: - The room
@@ -142,7 +150,23 @@ struct WalkView: View {
                 }
             }
             .padding(.horizontal, 20)
+            bottomBand
+        }
+    }
+
+    /// The shutter, with the photo spots running alongside it — a camera's
+    /// shutter and the strip of what it has already taken.
+    ///
+    /// It sits here rather than in the gap between the stick and the height
+    /// slider because that gap is the one piece of chrome still free for a
+    /// control that has to be dragged, and a shutter is only ever tapped.
+    private var bottomBand: some View {
+        HStack(alignment: .bottom, spacing: 0) {
             photoSpots
+                .frame(maxWidth: .infinity, alignment: .leading)
+            WalkShutterButton { designing = walk.standing }
+                .padding(.trailing, 20)
+                .padding(.bottom, 16)
         }
     }
 
