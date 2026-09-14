@@ -10,7 +10,10 @@ struct RoomListView: View {
 
     @State private var isScanning = false
     @State private var isShowingSettings = false
+    @State private var isShowingHelp = false
     @State private var path = NavigationPath()
+
+    @ObservedObject private var learned = Learned.shared
 
     /// Lets a simulator run open straight to a room:
     ///   xcrun simctl launch <sim> <bundle> --console
@@ -18,6 +21,15 @@ struct RoomListView: View {
     /// device attached; absent in normal use.
     private var roomToOpenOnLaunch: String? {
         ProcessInfo.processInfo.environment["OPEN_ROOM"]
+    }
+
+    private var showsFirstLaunch: Bool {
+        guard !learned.hasSeen(.firstLaunch), rooms.isEmpty else { return false }
+        #if DEBUG
+        // One full-screen cover at a time: a stand-in run wants its own screen.
+        if LearnStandIn.requested != nil { return false }
+        #endif
+        return true
     }
 
     var body: some View {
@@ -33,10 +45,17 @@ struct RoomListView: View {
             .navigationDestination(for: LibraryRoute.self) { _ in LibraryView() }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { isShowingSettings = true } label: {
+                    Menu {
+                        Button { isShowingHelp = true } label: {
+                            Label("How this works", systemImage: "questionmark.circle")
+                        }
+                        Button { isShowingSettings = true } label: {
+                            Label("Settings", systemImage: "gearshape")
+                        }
+                    } label: {
                         Image(systemName: "gearshape").foregroundStyle(Paper.ink)
                     }
-                    .accessibilityLabel("Settings")
+                    .accessibilityLabel("Settings and how this works")
                 }
                 // Always shown: the library doesn't depend on having a room yet.
                 ToolbarItem(placement: .topBarTrailing) {
@@ -48,6 +67,20 @@ struct RoomListView: View {
             }
             .safeAreaInset(edge: .bottom) { scan }
             .sheet(isPresented: $isShowingSettings) { SettingsView() }
+            .sheet(isPresented: $isShowingHelp) { LearnHelpView() }
+            #if DEBUG
+            // The scan screens need a LiDAR device; this is the only way to see
+            // them on a simulator. Never compiled into a release build.
+            .fullScreenCover(item: .constant(LearnStandIn.requested)) { LearnStandInView(screen: $0) }
+            #endif
+            // The one lesson that comes before anything is earned: walking a
+            // flat for two minutes has to be agreed to before it happens.
+            .fullScreenCover(isPresented: .constant(showsFirstLaunch)) {
+                LearnFirstView {
+                    learned.mark(.firstLaunch)
+                    isScanning = true
+                }
+            }
             .task {
                 guard let wanted = roomToOpenOnLaunch,
                       let room = rooms.first(where: { $0.name == wanted }) else { return }

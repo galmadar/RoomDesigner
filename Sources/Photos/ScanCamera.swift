@@ -20,7 +20,7 @@ final class ScanCamera: ObservableObject {
     @Published private(set) var misses = 0
 
     private weak var view: RoomCaptureView?
-    private let liveRoom = LiveRoomRecorder()
+    let liveRoom = LiveRoomRecorder()
     private var encoding: [Task<Shot?, Never>] = []
 
     func attach(to view: RoomCaptureView) {
@@ -105,6 +105,8 @@ final class LiveRoomRecorder: RoomCaptureSessionDelegate {
     private weak var previous: (any RoomCaptureSessionDelegate)?
     private let lock = NSLock()
     private var room: CapturedRoom?
+    private var progressObserver: ((ScanCoach.Progress) -> Void)?
+    private var correctionObserver: ((ScanCoach.Correction?) -> Void)?
 
     var latest: CapturedRoom? { lock.withLock { room } }
 
@@ -114,7 +116,26 @@ final class LiveRoomRecorder: RoomCaptureSessionDelegate {
         session.delegate = self
     }
 
-    private func keep(_ room: CapturedRoom) { lock.withLock { self.room = room } }
+    /// Watches the live room and RoomPlan's own coaching. Both are called on
+    /// RoomPlan's thread and must stay thin: the capture session cannot be left
+    /// waiting on whatever the app decides to draw.
+    func observe(progress: @escaping (ScanCoach.Progress) -> Void,
+                 correction: @escaping (ScanCoach.Correction?) -> Void) {
+        lock.withLock {
+            progressObserver = progress
+            correctionObserver = correction
+        }
+    }
+
+    /// The observers are read out under the lock and called outside it — calling
+    /// out while holding it is how this would deadlock.
+    private func keep(_ room: CapturedRoom) {
+        let observer = lock.withLock { () -> ((ScanCoach.Progress) -> Void)? in
+            self.room = room
+            return progressObserver
+        }
+        observer?(ScanCoach.progress(of: room))
+    }
 
     func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
         keep(room)
@@ -137,6 +158,8 @@ final class LiveRoomRecorder: RoomCaptureSessionDelegate {
 
     func captureSession(_ session: RoomCaptureSession,
                         didProvide instruction: RoomCaptureSession.Instruction) {
+        let observer = lock.withLock { correctionObserver }
+        observer?(ScanCoach.correction(for: instruction))
         previous?.captureSession(session, didProvide: instruction)
     }
 
