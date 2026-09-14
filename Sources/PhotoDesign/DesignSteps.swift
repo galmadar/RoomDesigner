@@ -11,6 +11,9 @@ struct WhereStep: View {
     let onNext: () -> Void
 
     @Environment(\.roomAccent) private var accent
+    /// Built once for this step and kept: renderer, mesh and measured bounds.
+    @StateObject private var inside = InsideRenderer()
+    @State private var isAiming = false
 
     private var photos: [ScanPhoto] { room.sortedPhotos }
 
@@ -44,15 +47,21 @@ struct WhereStep: View {
                         .padding(.top, photos.isEmpty ? 0 : 18)
 
                     if draft.angle == .free, let plan = plan {
+                        InsideView(image: inside.image)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 14)
+
                         StandingPicker(plan: plan, position: $draft.freePosition, yaw: $draft.freeYaw,
+                                       isDragging: $isAiming,
                                        proposals: room.proposals, photoSpots: photos.map(\.planSpot))
-                            .frame(height: 240)
+                            .frame(height: 190)
                             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .padding(.horizontal, 20)
-                            .padding(.top, 12)
-                        Text("Drag the dot to move. Drag the small circle to turn.")
+                            .padding(.top, 10)
+                        Text("Drag the dot to move. Drag the small circle to turn. The view above follows.")
                             .font(.system(size: 13))
                             .foregroundStyle(Paper.secondaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 20)
                             .padding(.top, 8)
                     }
@@ -66,6 +75,45 @@ struct WhereStep: View {
                 .padding(.top, 16)
                 .padding(.bottom, 28)
         }
+        // Driven from here rather than from the plan: the plan publishes where
+        // the camera is, never when the picture of it is out of date.
+        .task { await buildMesh() }
+        .onChange(of: draft.angle) { redraw() }
+        .onChange(of: draft.freePosition) { redraw(rough: isAiming) }
+        .onChange(of: draft.freeYaw) { redraw(rough: isAiming) }
+        .onChange(of: isAiming) { if !isAiming { redraw() } }
+    }
+
+    /// The one mesh this step renders from, assembled off the main thread and
+    /// then kept — never rebuilt for a frame.
+    private func buildMesh() async {
+        guard !inside.isLoaded, let captured = room.capturedRoom else { return }
+        let built = await Task.detached(priority: .userInitiated) { () -> (Mesh, RoomFloor?) in
+            (RoomGeometry.build(from: captured), RoomFloor(room: captured))
+        }.value
+        inside.load(built.0)
+        standInside(built.1)
+        redraw()
+    }
+
+    /// The bounding box is not the room: a room scanned at an angle has box
+    /// corners outside its own walls, and opening in one fills the frame with
+    /// the back of a wall. The floor polygon is what says "room".
+    private func standInside(_ floor: RoomFloor?) {
+        guard let floor else { return }
+        // Pushed back to the nearest spot inside, which keeps the opening corner
+        // a corner: the middle of a room facing level is a bare wall.
+        let inside = floor.keepInside(draft.freePosition, margin: 0.4)
+        guard inside != draft.freePosition else { return }
+        draft.freePosition = inside
+        draft.freeYaw = floor.heading(from: inside)
+    }
+
+    /// Rough while a finger is down, sharp once it lifts. Requests supersede
+    /// rather than queue, so a fast drag never renders a position already left.
+    private func redraw(rough: Bool = false) {
+        guard draft.angle == .free else { return }
+        inside.request(position: draft.freePosition, yaw: draft.freeYaw, draft: rough)
     }
 
     private var plan: FloorPlan? { room.capturedRoom.map { FloorPlan(room: $0) } }
@@ -132,16 +180,46 @@ struct WhereStep: View {
     }
 }
 
+/// The room from where you are standing, cropped to the frame the picture is
+/// cut from — so aiming is done by looking rather than by reading a map.
+private struct InsideView: View {
+    let image: UIImage?
+
+    var body: some View {
+        ZStack {
+            Paper.tint
+            if let image {
+                // Already cropped to the 4:3 `freeShot` cuts the picture from,
+                // so nothing on screen lies outside the picture.
+                Image(uiImage: image)
+                    .resizable()
+                    .interpolation(.medium)
+                    .scaledToFill()
+            } else {
+                ProgressView().tint(Paper.mutedInk)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .aspectRatio(4.0 / 3.0, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(Paper.outline, lineWidth: 1)
+        }
+        .accessibilityLabel("The room seen from where you are standing")
+    }
+}
+
 /// The plan with only the camera on it: where you stand and which way you face.
 private struct StandingPicker: View {
     let plan: FloorPlan
     @Binding var position: SIMD2<Float>
     @Binding var yaw: Float
+    @Binding var isDragging: Bool
     let proposals: [Proposal]
     let photoSpots: [PlanSpot?]
 
-    @State private var isDragging = false
-    @State private var fieldOfView: Float = 65 * .pi / 180
+    @State private var fieldOfView: Float = InsideRenderer.fieldOfView
     @State private var selection: Proposal.ID?
 
     var body: some View {
