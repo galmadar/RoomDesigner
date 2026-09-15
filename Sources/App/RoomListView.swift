@@ -25,6 +25,10 @@ struct RoomListView: View {
     }
 
     private var showsFirstLaunch: Bool {
+        // The card promises a scan and its one button starts one, so a phone
+        // that cannot scan never sees it. What it sees first is the list's own
+        // notice, which says so instead of offering it.
+        guard RoomCaptureSession.isSupported else { return false }
         guard !learned.hasSeen(.firstLaunch), rooms.isEmpty else { return false }
         #if DEBUG
         // One full-screen cover at a time: a stand-in run wants its own screen.
@@ -98,6 +102,13 @@ struct RoomListView: View {
             }
             .task { GallerySeed.installIfAsked(into: context) }
             .task {
+                // Stands in for the tap on "Open a demo room", which a script
+                // has no way to make. It goes through the button's own code, so
+                // what is driven is the shipped path and not a copy of it.
+                guard RoomSeed.installsDemoRoom else { return }
+                openDemoRoom()
+            }
+            .task {
                 guard GallerySeed.opensGallery else { return }
                 path.append(GalleryRoute())
             }
@@ -137,6 +148,16 @@ struct RoomListView: View {
         notices.opening = nil
     }
 
+    private var hasDemoRoom: Bool { rooms.contains(where: \.isDemo) }
+
+    /// Made on the tap rather than seeded at launch: a room nobody asked for,
+    /// sitting in the list of rooms you scanned, would be the same lie the
+    /// notice above it is there to avoid.
+    private func openDemoRoom() {
+        guard let room = DemoRoom.install(into: context) else { return }
+        path.append(room)
+    }
+
     private var cards: some View {
         ScrollView {
             LazyVStack(spacing: 14) {
@@ -163,7 +184,9 @@ struct RoomListView: View {
             Text("No rooms yet")
                 .question()
                 .multilineTextAlignment(.center)
-            Text("Scan a room and it lands here, in a colour taken from its own photos. Everything you design lives inside it.")
+            Text(RoomCaptureSession.isSupported
+                 ? "Scan a room and it lands here, in a colour taken from its own photos. Everything you design lives inside it."
+                 : "Rooms come from a scan, and this iPhone cannot make one. The demo room below is here so there is something to look around.")
                 .font(.system(size: 14))
                 .foregroundStyle(Paper.secondaryInk)
                 .multilineTextAlignment(.center)
@@ -178,14 +201,27 @@ struct RoomListView: View {
     /// there are rooms already.
     private var scan: some View {
         VStack(spacing: 10) {
-            if !RoomCaptureSession.isSupported { UnsupportedDeviceNotice() }
-            Button { isScanning = true } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "cube.transparent").font(.system(size: 18, weight: .semibold))
-                    Text("Scan a room")
+            if RoomCaptureSession.isSupported {
+                Button { isScanning = true } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "cube.transparent").font(.system(size: 18, weight: .semibold))
+                        Text("Scan a room")
+                    }
                 }
+                .buttonStyle(PrimaryButtonStyle())
+            } else {
+                // "Scan a room" is not offered at all here: it is the one thing
+                // this phone cannot do, and a button that only ever leads to an
+                // apology is worse than saying so first.
+                UnsupportedDeviceNotice()
+                Button { openDemoRoom() } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "cube.transparent").font(.system(size: 18, weight: .semibold))
+                        Text(hasDemoRoom ? "Open the demo room" : "Open a demo room")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
             }
-            .buttonStyle(PrimaryButtonStyle())
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -276,16 +312,26 @@ private struct RoomCard: View {
     }
 }
 
+/// What this phone can and cannot do, said before anything is offered.
+///
+/// It replaces a line that was a dead end. Scanning needs LiDAR and this phone
+/// has none; that cannot be worked around and is not worth softening. What can
+/// be done is everything a scan feeds, on a room nobody had to scan.
 private struct UnsupportedDeviceNotice: View {
     var body: some View {
-        Text("This device has no LiDAR scanner, so rooms can't be scanned on it.")
-            .font(.system(size: 13))
-            .foregroundStyle(Paper.secondaryInk)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .background(Paper.tint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        VStack(spacing: 5) {
+            Text("This iPhone cannot scan a room.")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Paper.ink)
+            Text("Scanning needs the LiDAR sensor, which only Pro iPhones have. Everything built on a scan works here on a demo room: the floor plan, walking through it at eye height, and the design flow as far as the picture itself.")
+                .font(.system(size: 13))
+                .foregroundStyle(Paper.secondaryInk)
+        }
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Paper.tint, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

@@ -44,6 +44,10 @@ final class RoomIdeas: ObservableObject {
     /// every time would buy nothing.
     func load(_ room: ScannedRoom, force: Bool = false) async {
         let id = room.persistentModelID
+        // The one gate for every caller: ideas are a request to the service, and
+        // the demo room is nobody's room to have ideas about. Guarding here
+        // rather than at each screen means a new caller cannot forget.
+        guard !room.isDemo else { return }
         guard let captured = room.rawCapturedRoom else { return }
         let reading = room.reading(of: captured)
         let kind = reading.kind

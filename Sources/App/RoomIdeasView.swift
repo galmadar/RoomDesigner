@@ -14,6 +14,14 @@ struct RoomIdeasView: View {
 
     private var state: RoomIdeas.State { ideas.state(for: room) }
 
+    /// Said instead of a loading state that is never going to end: ``RoomIdeas``
+    /// refuses to ask the service about the demo room at all.
+    private var demoLine: String? {
+        room.isDemo
+            ? "Ideas are asked of the service about a room you scanned. The demo room gets none — Design still opens, and you can type a brief in it."
+            : nil
+    }
+
     /// Pictures made before the room type last changed — genuinely made as
     /// something else, rather than merely old.
     private var madeBefore: Int {
@@ -77,9 +85,10 @@ struct RoomIdeasView: View {
         VStack(alignment: .leading, spacing: 7) {
             Text("New ideas.")
                 .question()
-            Text(state.isLoading
-                 ? "Being asked again now that the room has changed."
-                 : "Asked again the moment you changed the room.")
+            Text(demoLine
+                 ?? (state.isLoading
+                     ? "Being asked again now that the room has changed."
+                     : "Asked again the moment you changed the room."))
                 .font(.system(size: 14))
                 .foregroundStyle(Paper.secondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
@@ -99,9 +108,10 @@ struct RoomIdeasView: View {
                         .frame(height: 62)
                 }
             } else if state.ideas.isEmpty {
-                Text(state.failed
-                     ? "No ideas came back this time. Design still works — type the brief yourself."
-                     : "No ideas yet.")
+                Text(demoLine
+                     ?? (state.failed
+                         ? "No ideas came back this time. Design still works — type the brief yourself."
+                         : "No ideas yet."))
                     .font(.system(size: 14))
                     .foregroundStyle(Paper.secondaryInk)
                     .frame(maxWidth: .infinity, alignment: .leading)
