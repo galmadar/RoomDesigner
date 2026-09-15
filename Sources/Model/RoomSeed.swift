@@ -57,6 +57,10 @@ enum RoomSeed {
     /// "object", "size" or "ideas" — pushed on top of the guess screen.
     static var route: String? { environment["SEED_ROUTE"] }
 
+    /// Puts ``DemoRoom`` in the store without the tap that normally makes it.
+    /// The room itself ships; only this way of reaching it is debug-only.
+    static var installsDemoRoom: Bool { environment["SEED_DEMO_ROOM"] == "1" }
+
     /// Sent through the real endpoint on appear, so the talk screen is driven
     /// by an actual round trip rather than a hand-made reply.
     static var sentence: String? { environment["SEED_SENTENCE"] }
@@ -93,6 +97,7 @@ enum RoomSeed {
 #else
     static var opensIdentity: Bool { false }
     static var route: String? { nil }
+    static var installsDemoRoom: Bool { false }
     static var sentence: String? { nil }
     static var opensScan: Bool { false }
     static var opens: String? { nil }

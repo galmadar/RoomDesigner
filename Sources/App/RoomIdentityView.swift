@@ -184,7 +184,10 @@ struct RoomIdentityView: View {
         .padding(.top, 22)
     }
 
-    private var sentenceBox: some View {
+    /// Reading a sentence is a service call, and the demo room is nobody's room
+    /// to describe. Tapping a name above still works.
+    @ViewBuilder private var sentenceBox: some View {
+        if !room.isDemo {
         VStack(alignment: .leading, spacing: 8) {
             if let trouble {
                 Text(trouble)
@@ -201,6 +204,7 @@ struct RoomIdentityView: View {
         .padding(.top, 10)
         .padding(.bottom, 16)
         .background(Paper.sheet)
+        }
     }
 
     // MARK: -

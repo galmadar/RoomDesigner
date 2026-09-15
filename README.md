@@ -47,6 +47,18 @@ likeness. No assets, no licensing.
 
 **SceneKit is not used.** It is formally deprecated as of iOS 26.
 
+**A demo room ships with the app.** Scanning needs LiDAR, which only Pro iPhones
+have, and the App Store cannot be told to hide the app from the rest:
+[Required Device Capabilities](https://developer.apple.com/support/required-device-capabilities/)
+has no value for a depth sensor, and the nearest one, `arkit`, means only "an
+A9 or later processor" — which every iPhone that can run iOS 17 already is. So
+the app says what the phone cannot do and offers something to look at instead:
+`Sources/Demo/DemoRoom.json` is a hand-written `CapturedRoom` — a rectangular
+4.4 m by 3.6 m living room with a window, a door and five pieces of furniture,
+every measurement typed rather than measured. It can be walked through, seen on
+the plan and taken through the design flow; nothing that costs money is offered
+for it. No real scan ever ships.
+
 ## Building it
 
 Requires Xcode 26+, an iPhone with a **LiDAR scanner** (a Pro model), and
@@ -71,5 +83,6 @@ address entered in the app's settings:
 | `Sources/Geometry/` | `CapturedRoom` → mesh, triangulation, furniture proxies |
 | `Sources/Rendering/` | the Metal pass, the camera, conditioning images |
 | `Sources/FloorPlan/` | the plan, which doubles as the viewpoint and furniture editor |
+| `Sources/Demo/` | the bundled room for iPhones that cannot scan |
 | `Sources/Model/` | SwiftData storage; everything stays on the device |
 | `Sources/Network/` | the one call to the generation service |

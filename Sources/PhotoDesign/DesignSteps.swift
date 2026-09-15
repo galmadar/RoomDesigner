@@ -649,9 +649,13 @@ struct HowStep: View {
                         .paperCard()
                         .padding(.horizontal, 20)
 
-                    SuggestionIdeas(text: $draft.prompt, room: room)
-                        .padding(.horizontal, 20)
-                        .padding(.top, 12)
+                    // Ideas are asked of the service, and the demo room is not
+                    // anybody's room to have ideas about.
+                    if !room.isDemo {
+                        SuggestionIdeas(text: $draft.prompt, room: room)
+                            .padding(.horizontal, 20)
+                            .padding(.top, 12)
+                    }
 
                     speed
                         .padding(.horizontal, 20)
@@ -662,12 +666,22 @@ struct HowStep: View {
             .scrollDismissesKeyboard(.interactively)
 
             VStack(spacing: 10) {
-                if run.isWorking { progress } else { summary }
-                Button(action: onMake) {
-                    Text(run.isWorking ? "Working…" : "Make the picture")
+                // No button at all rather than a disabled one: an action that
+                // can never work should not be standing on the screen.
+                if room.isDemo {
+                    Text("The demo room stops here. Making a picture needs a room you scanned yourself, and scanning needs a Pro iPhone.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Paper.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    if run.isWorking { progress } else { summary }
+                    Button(action: onMake) {
+                        Text(run.isWorking ? "Working…" : "Make the picture")
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(draft.trimmedPrompt.isEmpty || run.isWorking)
                 }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(draft.trimmedPrompt.isEmpty || run.isWorking)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)

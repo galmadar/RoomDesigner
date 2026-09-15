@@ -57,6 +57,10 @@ final class ScannedRoom {
     /// one blob sidesteps the observation traps of a stored collection.
     var correctionsData: Data?
 
+    /// The bundled sample room, which nobody scanned. Nothing that costs money
+    /// is offered for one — see ``DemoRoom``.
+    var isDemo: Bool = false
+
     init(name: String, createdAt: Date = .now) {
         self.name = name
         self.createdAt = createdAt

@@ -42,4 +42,4 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.galmadar.roomdesigner
         CODE_SIGN_STYLE: Automatic
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"

@@ -68,6 +68,7 @@ struct RoomDetailView: View {
         .task { if RoomSeed.opensScan { isSeeingScan = true } }
         .task { if RoomSeed.opens == "pick" { isAddingPhoto = true } }
         .task { if RoomSeed.opens == "design" { isDesigning = true } }
+        .task { if RoomSeed.opens == "walk" { isWalking = true } }
         .task {
             guard RoomSeed.opens == "place" || RoomSeed.opens == "placeByHand" else { return }
             placingPhoto = room.sortedPhotos.first { !$0.isPlaced }
@@ -124,6 +125,7 @@ struct RoomDetailView: View {
             top
             RoomIdentityStrip(room: room) { isCorrectingRoom = true }
             counts
+            if room.isDemo { demoNote }
             Spacer(minLength: 12)
             actions
         }
@@ -222,6 +224,18 @@ struct RoomDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 16)
             .padding(.top, 10)
+    }
+
+    /// Said on the room itself and not only on the screen that offered it: a
+    /// room nobody scanned must never be mistaken for one that was.
+    private var demoNote: some View {
+        Text("A made-up room, not a scan of anywhere. It is here so the plan, the walk and the design flow have something to work on.")
+            .font(.system(size: 13))
+            .foregroundStyle(Paper.secondaryInk)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
     }
 
     private var countsText: String {
