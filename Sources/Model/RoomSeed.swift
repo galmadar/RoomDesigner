@@ -77,6 +77,15 @@ enum RoomSeed {
     /// only stands in for the finger.
     static var opens: String? { environment["SEED_OPEN"] }
 
+    /// A brief typed into the design flow, and the button pressed. Everything
+    /// downstream is the shipped path: the same render, the same upload, the
+    /// same compose call, and a picture that costs money.
+    static var makesPicture: String? { environment["SEED_MAKE"] }
+
+    /// Degrees to turn the free camera from where the flow opens it, so several
+    /// pictures of one room are not all the same view.
+    static var makeYaw: Float? { environment["SEED_MAKE_YAW"].flatMap { Float($0) } }
+
     // MARK: - The plan without a finger
 
     /// The plan is a map: zoomed, panned, and stood on. None of the three can be
@@ -101,6 +110,8 @@ enum RoomSeed {
     static var sentence: String? { nil }
     static var opensScan: Bool { false }
     static var opens: String? { nil }
+    static var makesPicture: String? { nil }
+    static var makeYaw: Float? { nil }
     static var planZoom: CGFloat? { nil }
     static var planPan: CGSize? { nil }
     static var planStep: Float? { nil }

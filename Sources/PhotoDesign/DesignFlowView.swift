@@ -47,6 +47,9 @@ struct DesignFlowView: View {
         .task { await prepare() }
         .task { await drawPreview() }
         .task(id: library.map(\.id)) { await thumbnails.load(library) }
+#if DEBUG
+        .task { await makeIfAsked() }
+#endif
     }
 
     private var topBar: some View {
@@ -206,6 +209,24 @@ struct DesignFlowView: View {
             draft.stand(inCorner: measured)
         }
     }
+
+#if DEBUG
+    /// Stands in for the finger: types the brief and presses the one button.
+    ///
+    /// Everything past this point is the shipped path, so a run driven from a
+    /// script proves the real pipeline and costs real money. Debug only, opt-in,
+    /// and never for the demo room, which the button itself refuses.
+    private func makeIfAsked() async {
+        guard let brief = RoomSeed.makesPicture, !room.isDemo else { return }
+        // The camera is only somewhere once the mesh has been measured.
+        while bounds == nil, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(50)) }
+        guard !Task.isCancelled else { return }
+        if let turn = RoomSeed.makeYaw { draft.freeYaw += turn * .pi / 180 }
+        draft.prompt = brief
+        NSLog("SEED_MAKE: sending %@ to %@", brief, "\(PlanService.baseURL)")
+        make()
+    }
+#endif
 
     /// Hands the picture to ``PictureJobs`` and closes. Nothing is awaited here:
     /// the render and the request both belong to a job that outlives this screen.
