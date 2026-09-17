@@ -1,4 +1,4 @@
-// Draws the RoomDesigner app icon and writes the asset catalog.
+// Draws the Roomsmith app icon and writes the asset catalog.
 // Pure CoreGraphics so it needs no toolchain beyond a Swift compiler.
 //
 //   swiftc -O -o icon Tools/AppIcon/main.swift
@@ -301,7 +301,7 @@ func homeScreen(_ ctx: CGContext, _ r: CGRect, dark: Bool) {
         ctx.clip()
         place(ctx, renderIcon(pair.0, px: 180), rr)
         ctx.restoreGState()
-        text(ctx, "Room Designer", rr.midX, rr.maxY + 24, size: 17, color: label, align: .center)
+        text(ctx, "Roomsmith", rr.midX, rr.maxY + 24, size: 17, color: label, align: .center)
         text(ctx, pair.1, rr.midX, rr.maxY + 46, size: 15,
              color: dark ? rgb(0xD9924F) : rgb(0x9A6A38), align: .center)
     }
@@ -341,7 +341,7 @@ func makeSheet(_ dir: String) {
     ctx.fill(CGRect(x: 0, y: 0, width: CGFloat(W), height: CGFloat(H)))
 
     let ink = rgb(0x1C1917), quiet = rgb(0x79706A)
-    text(ctx, "RoomDesigner app icon — warming direction C", m, 64, size: 36,
+    text(ctx, "Roomsmith app icon — warming direction C", m, 64, size: 36,
          color: ink, font: "HelveticaNeue-Medium")
     text(ctx, "Geometry is byte-identical between the two. Only the ground and the ink changed.",
          m, 100, size: 19, color: quiet)

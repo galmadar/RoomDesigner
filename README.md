@@ -1,4 +1,4 @@
-# Room Designer
+# Roomsmith
 
 An iPhone app that scans a room with LiDAR and gives back a photorealistic image
 of that room redesigned — with its real walls, its real window, its real
@@ -67,7 +67,7 @@ Requires Xcode 26+, an iPhone with a **LiDAR scanner** (a Pro model), and
 ```bash
 cp Local.xcconfig.example Local.xcconfig   # then put your Apple team ID in it
 xcodegen generate
-open RoomDesigner.xcodeproj
+open Roomsmith.xcodeproj
 ```
 
 Scanning, the floor plan and the viewpoint preview all work with nothing else

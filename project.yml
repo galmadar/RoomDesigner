@@ -1,4 +1,4 @@
-name: RoomDesigner
+name: Roomsmith
 options:
   bundleIdPrefix: com.galmadar
   deploymentTarget:
@@ -16,7 +16,7 @@ settings:
 configFiles: {}
 
 targets:
-  RoomDesigner:
+  Roomsmith:
     type: application
     platform: iOS
     sources:
@@ -25,7 +25,7 @@ targets:
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: Room Designer
+        CFBundleDisplayName: Roomsmith
         NSCameraUsageDescription: Scanning a room uses the camera and the depth sensor.
         # Reaching the design service while it runs on a Mac on the same wifi.
         NSLocalNetworkUsageDescription: Finding the design service running on your Mac.

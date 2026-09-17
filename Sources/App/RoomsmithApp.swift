@@ -2,7 +2,7 @@ import SwiftData
 import SwiftUI
 
 @main
-struct RoomDesignerApp: App {
+struct RoomsmithApp: App {
     /// The notification delegate has to be in place before launch finishes, or
     /// the tap that started the app is never handed over.
     init() {

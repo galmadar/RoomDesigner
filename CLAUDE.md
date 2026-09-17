@@ -1,4 +1,4 @@
-# RoomDesigner
+# Roomsmith
 
 An iPhone app that scans a room with RoomPlan, turns the scan into a mesh, and
 renders that mesh offscreen into the conditioning image an image model is asked
@@ -21,7 +21,7 @@ fresh array instead of mutating one — `room.conceptImages = remaining`, not
 back for this reason, and `ScannedRoom` stores proposals and arrangements as
 encoded blobs rather than arrays to sidestep it entirely.
 
-**The Xcode project is generated.** `RoomDesigner.xcodeproj/` is gitignored and
+**The Xcode project is generated.** `Roomsmith.xcodeproj/` is gitignored and
 built by `xcodegen generate` from `project.yml`, which takes `Sources` as a
 folder. New files under `Sources/` are picked up with no project edit; never
 hand-edit the project file.
