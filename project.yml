@@ -10,8 +10,8 @@ settings:
     # Language mode 5 on purpose: Swift 6 strict concurrency is a fight worth
     # picking later, not while the app is still finding its shape.
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "2"
 
 configFiles: {}
 
@@ -26,6 +26,12 @@ targets:
       path: Info.plist
       properties:
         CFBundleDisplayName: Roomsmith
+        # Without these the plist carries literal versions that silently outrank
+        # MARKETING_VERSION / CURRENT_PROJECT_VERSION and never change.
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        # No encryption of our own — only OS-provided TLS, which is exempt.
+        ITSAppUsesNonExemptEncryption: false
         NSCameraUsageDescription: Scanning a room uses the camera and the depth sensor.
         # Reaching the design service while it runs on a Mac on the same wifi.
         NSLocalNetworkUsageDescription: Finding the design service running on your Mac.
